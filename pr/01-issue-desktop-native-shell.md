@@ -1,11 +1,4 @@
-<!--
-Draft for .github/ISSUE_TEMPLATE/feature.yml → "Feature request" (labels: type:feature).
-Paste each section into the matching field. Title suggestion at the top.
--->
 
-**Title:** Replace the Electron desktop shell with a native UI (Rust + Rune), keeping the orchestrator
-
----
 
 **What problem are you trying to solve?**
 
@@ -49,9 +42,8 @@ If the direction is wrong for the product, say so and I will stop at the documen
 
 ---
 
-Attachments to include when filing:
-
-- a screenshot of the native window next to the Electron one (same geometry, same tokens)
-- `--tree` output showing the pane rects the tests assert
-- a 20-second recording: spawn → `[orchestrator-phase] …` → ready → footer shows
-  "Orchestrator ready"; then killing the shell and the orchestrator stopping within 2 s
+I can attach a screenshot of the native window beside the Electron one, the `--tree` dump the
+tests assert against, and a short recording (spawn → phases → ready → footer "Orchestrator
+ready"; then killing the shell and the orchestrator stopping within 2 s) on request, or put the
+prototype in a repo if you want to read the code — I did not want to publish one before asking
+whether the direction makes sense.

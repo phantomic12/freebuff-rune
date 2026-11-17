@@ -1,12 +1,4 @@
-<!--
-PR body for the ready-to-send branch `docs/desktop-shell-contract` (patch in this directory).
-Title is the commit subject; both satisfy .github/workflows/pr-hygiene.yml (≥15 chars, ≥3 words,
-a real description, no forbidden paths).
--->
 
-**Title:** Document the desktop orchestrator's shell contract
-
----
 
 **What this changes**
 
@@ -37,5 +29,6 @@ linked below asks whether it should be.
 
 No product behaviour changes: documentation only. It touches no path outside `docs/`.
 
-Filed as an issue first (area: Desktop app) because a native shell is a direction question, not a
-docs question — if the answer is "not the direction", this page is still true and still useful.
+Companion issue: #1685 (area: Desktop app). A native shell is a direction question, not a docs
+question, so it is asked there rather than shipped here — if the answer is "not the direction",
+this page is still true and still useful.

@@ -93,7 +93,8 @@ re-derives one frustrating session at a time. This page fixes the shape in one p
 from observing a shipped install, so if the real shell ever changes the handshake, this page
 should be updated with it.
 
-The reference implementation of all of the above, in ~500 lines of dependency-light Rust, lives in
-the experimental repo linked from the accompanying issue; the same file is how the native shell
-spawns the same server and reports its state. Neither the shell code nor the server code is
-required to use this contract — only the words above.
+A reference implementation of all of the above is ~500 lines of dependency-light Rust: it spawns
+the same server, keeps it alive and reports its state in a sidebar. It is deliberately not part of
+this document — whether a native shell belongs in this repository is the question the accompanying
+issue asks. Neither the shell code nor the server code is required to use this contract; only the
+words above.

@@ -6,6 +6,8 @@ Fork and branch, ready to open:
 |---|---|
 | Fork | `phantomic12/freebuff` (GitHub, via `gh repo fork`) |
 | Branch | `docs/desktop-shell-contract` — rebased on upstream `main` (`23eff4e`), 1 ahead, 0 behind |
+| Issue | **<https://github.com/CodebuffAI/freebuff/issues/1685>** (open) |
+| PR | **<https://github.com/CodebuffAI/freebuff/pull/1686>** (open, `MERGEABLE`, PR-hygiene check passed) |
 | File | `docs/desktop-shell-contract.md` (4.4 KB) |
 | Local clone | `upstream-freebuff/` — `origin` = upstream, `fork` = ours |
 

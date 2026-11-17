@@ -1,4 +1,4 @@
-From 3f3d505984f5a67551c407cf85175b00e57d3d23 Mon Sep 17 00:00:00 2001
+From c7ee49d57c7e549312522ff83d2077acee3191d3 Mon Sep 17 00:00:00 2001
 From: freebuff-rune <contributor@users.noreply.github.com>
 Date: Tue, 17 Nov 2026 14:54:16 -0500
 Subject: [PATCH] Document the desktop orchestrator's shell contract
@@ -12,16 +12,16 @@ reading a shipped install.
 This documents the boundary as observed from one, so a client, a test harness
 or a native shell can drive the same server. No user data, no server code.
 ---
- docs/desktop-shell-contract.md | 99 ++++++++++++++++++++++++++++++++++
- 1 file changed, 99 insertions(+)
+ docs/desktop-shell-contract.md | 100 +++++++++++++++++++++++++++++++++
+ 1 file changed, 100 insertions(+)
  create mode 100644 docs/desktop-shell-contract.md
 
 diff --git a/docs/desktop-shell-contract.md b/docs/desktop-shell-contract.md
 new file mode 100644
-index 0000000..54486d2
+index 0000000..56770a7
 --- /dev/null
 +++ b/docs/desktop-shell-contract.md
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,100 @@
 +# The desktop orchestrator's shell contract
 +
 +The desktop app is a shell around a local HTTP server. The shell is what starts it, keeps it
@@ -117,10 +117,11 @@ index 0000000..54486d2
 +from observing a shipped install, so if the real shell ever changes the handshake, this page
 +should be updated with it.
 +
-+The reference implementation of all of the above, in ~500 lines of dependency-light Rust, lives in
-+the experimental repo linked from the accompanying issue; the same file is how the native shell
-+spawns the same server and reports its state. Neither the shell code nor the server code is
-+required to use this contract — only the words above.
++A reference implementation of all of the above is ~500 lines of dependency-light Rust: it spawns
++the same server, keeps it alive and reports its state in a sidebar. It is deliberately not part of
++this document — whether a native shell belongs in this repository is the question the accompanying
++issue asks. Neither the shell code nor the server code is required to use this contract; only the
++words above.
 \ No newline at end of file
 -- 
 2.56.0.windows.4
