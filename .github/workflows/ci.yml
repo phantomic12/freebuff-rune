@@ -8,6 +8,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# The bootstrap script is bash; GitHub's Windows runners default `run` to PowerShell.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check:
     # The shell targets Windows first (custom caption buttons, %LOCALAPPDATA% paths). Linux and
