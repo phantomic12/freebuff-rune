@@ -1,4 +1,4 @@
-From 7fd782c93597b0466d482fa949341662b4878bcd Mon Sep 17 00:00:00 2001
+From 3f3d505984f5a67551c407cf85175b00e57d3d23 Mon Sep 17 00:00:00 2001
 From: freebuff-rune <contributor@users.noreply.github.com>
 Date: Tue, 17 Nov 2026 14:54:16 -0500
 Subject: [PATCH] Document the desktop orchestrator's shell contract
