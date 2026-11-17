@@ -26,6 +26,17 @@ reused. That choice grants no trademark rights: "Freebuff" is used nominatively 
 compatible product; neither this project nor its authors are affiliated with or endorsed by
 Freebuff or Codebuff.
 
+## Copyright
+
+Copyright in this repository is held by its authors collectively; `LICENSE` names no individual.
+Contributors keep their authorship in the commit history, which is where attribution lives for a
+project of this size. If the work is ever assigned to an entity — for example by contributing it
+upstream — that line changes with the assignment, and nothing else here does.
+
+Contributing code to Freebuff Desktop itself is a different thing from this repository: that
+project is Apache-2.0 and takes contributions under its own `NOTICE` and contributor terms, so a
+change offered there belongs to that project's licensing, not to this one.
+
 ## Rune
 
 `vendor/rune` is a clone of [anomalyco/rune](https://github.com/anomalyco/rune) at the revision in
