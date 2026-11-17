@@ -12,11 +12,19 @@ Everything in this repository is either:
   that already has it**, or
 - the vendored framework below.
 
-Freebuff Desktop itself is a third-party product; the artifacts it installs stay on the user's
-machine in `extracted/` and `upstream-freebuff/`, both gitignored, and are not distributed with
-this repository. Fixtures in `app/src/fixtures.rs` are fictional sample content, not the app's
-data. The shell talks to the user's own locally installed orchestrator at their request; it ships
-none of it.
+### Relationship to Freebuff Desktop
+
+The port was studied from an installed copy of Freebuff Desktop: its published interface design
+(tokens, geometry, pane composition) and the observable behaviour of its local orchestrator
+(boot lines, ports, HTTP surface). **No Freebuff source code is included, copied, or
+redistributed here.** The fixtures in `app/src/fixtures.rs` are fictional sample content, and the
+shell speaks only to the user's own locally-installed orchestrator when the user runs it.
+
+The Apache License 2.0 below is the same license Freebuff Desktop itself ships under (its
+`LICENSE` names Freebuff, Inc.), chosen so the derivation carries no ambiguity about what may be
+reused. That choice grants no trademark rights: "Freebuff" is used nominatively to describe the
+compatible product; neither this project nor its authors are affiliated with or endorsed by
+Freebuff or Codebuff.
 
 ## Rune
 

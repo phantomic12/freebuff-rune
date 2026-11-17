@@ -182,7 +182,8 @@ scripts/            bootstrap-rune.sh — Rune at the pinned revision
 tools/              three read-only helpers used against the installed app; nothing ships from it
 ```
 
-No Freebuff code is redistributed here; see `NOTICE.md`. Licensed MIT (`LICENSE`).
+No Freebuff code is redistributed here; see `NOTICE.md`. Licensed Apache-2.0 (`LICENSE`) — the
+same license Freebuff Desktop ships under — with Rune's MIT notice carried in `NOTICE.md`.
 
 ## What is mocked, and the next step
 

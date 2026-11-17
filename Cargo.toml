@@ -13,7 +13,7 @@ accesskit_macos = { path = "vendor/rune/vendor/accesskit_macos" }
 
 [workspace.package]
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 
 # Rune's vendored crates inherit these; they must exist at this workspace root.
 [workspace.lints.rust]
