@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["app"]
+
+# Rune vendors patched copies of these crates; a dependency's `[patch]` does not apply to a
+# workspace that depends on it, so the app workspace must patch them too.
+[patch.crates-io]
+wgpu-hal = { path = "vendor/rune/vendor/wgpu-hal" }
+winit = { path = "vendor/rune/vendor/winit" }
+parley_engine = { path = "vendor/rune/vendor/parley_engine" }
+accesskit_windows = { path = "vendor/rune/vendor/accesskit_windows" }
+accesskit_macos = { path = "vendor/rune/vendor/accesskit_macos" }
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+# Rune's vendored crates inherit these; they must exist at this workspace root.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_must_use = "deny"
+unsafe_code = "allow"
+
+[workspace.lints.clippy]
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+dbg_macro = "deny"
+disallowed_types = "deny"
+expect_used = "warn"
+todo = "warn"
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "warn"
+let_underscore_must_use = "warn"
+disallowed_methods = "warn"
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+[profile.release]
+codegen-units = 16
+incremental = true

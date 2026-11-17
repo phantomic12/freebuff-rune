@@ -1,0 +1,10 @@
+/target
+/shots
+/build.log
+# Reference artifacts extracted from the installed Electron app (not redistributable).
+/extracted
+/upstream-freebuff
+/.scratch
+
+# Rune is fetched by scripts/bootstrap-rune.sh, not committed (181 MB).
+/vendor/rune

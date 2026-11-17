@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    # The shell targets Windows first (custom caption buttons, %LOCALAPPDATA% paths). Linux and
+    # macOS discovery is implemented but not exercised here yet.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'vendor/rune-rev.txt') }}
+
+      # Rune is pre-release and consumed by revision, and the workspace's [patch.crates-io]
+      # entries point into Rune's own vendored crates, so the clone must exist before building.
+      - name: Fetch Rune at the pinned revision
+        run: ./scripts/bootstrap-rune.sh
+
+      - name: Format
+        run: cargo fmt -p freebuff-rune -- --check
+
+      - name: Clippy
+        run: cargo clippy -p freebuff-rune --no-deps -- -D warnings
+
+      - name: Tests
+        run: cargo test -p freebuff-rune
+
+      # The live test spawns the installed app's orchestrator, which CI does not have; snapshots
+      # need a GPU. Both stay out of CI on purpose.
