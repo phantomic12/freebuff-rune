@@ -41,6 +41,23 @@ The Rust code reproduces the app's geometry from its own tokens, not by eye:
 `cargo test` asserts those numbers against the laid-out tree, so a regression in layout fails a
 test instead of needing an eyeball.
 
+## Screenshots
+
+Rendered by `scripts/shot.sh` at 2x the 1440 × 900 window — the real layout, not a mockup.
+
+| dark | light |
+|---|---|
+| ![dark](docs/screenshots/dark.png) | ![light](docs/screenshots/light.png) |
+
+| new chat (empty state) | settings |
+|---|---|
+| ![empty](docs/screenshots/empty.png) | ![settings](docs/screenshots/settings.png) |
+
+The sidebar footer with the real orchestrator behind it — spawned from the installed app, booted
+through nine phases, then queried for its auth state:
+
+![backend](docs/screenshots/backend-live.png)
+
 ## Layout
 
 ```
@@ -194,6 +211,7 @@ docs/port-notes.md  the recovered contracts (boot, handshake, launch token, API 
 scripts/            bootstrap-rune.sh (Rune at the pinned revision), run.sh (the window),
                     shot.sh (the PNG set)
 tools/              three read-only helpers used against the installed app; nothing ships from it
+docs/screenshots/   PNGs from scripts/shot.sh, used by the README
 ```
 
 No Freebuff code is redistributed here; see `NOTICE.md`. Licensed Apache-2.0 (`LICENSE`) — the
