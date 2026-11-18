@@ -1,7 +1,7 @@
 //! The title bar: window drag, history, the Code/Chat switch, the thread tabs and the panel
 //! toggles — `.shell-tab-row`, `.tabs`, `.tab` and `.shell-tab-trailing` in the stylesheet.
 
-use rune::{ChromeInsets, Color, Cx, El, el, row, spacer, text};
+use rune::{ChromeInsets, Color, Cx, El, el, row, text};
 
 use crate::model::{Mode, State, Status};
 use crate::tokens::{self as tk, Tok, wash};
@@ -34,8 +34,9 @@ pub fn view(s: &State, _cx: &mut Cx<State>, t: &Tok, insets: ChromeInsets) -> El
         )
         .child(history(s, t))
         .child(mode_switch(s, t))
+        // The tab strip grows into whatever the leading cluster leaves, so it needs no spacer of
+        // its own: a second growing child would split that space and squeeze the tabs.
         .child(tabs(s, t))
-        .child(spacer())
         .child(trailing(s, t));
     strip = strip.child(
         el().absolute(0.0, tk::TABBAR_H - 1.0)
@@ -118,7 +119,7 @@ fn tab_chip(t: &Tok, thread: &crate::model::Thread, on: bool, p: usize, i: usize
         .px(tk::SP4)
         .shrink()
         .min_w(56.0)
-        .max_w(210.0)
+        .max_w(236.0)
         .on_press(move |s: &mut State| s.open_thread(p, i));
     if on {
         chip = chip.fill(t.raised).border(1.0, t.border);

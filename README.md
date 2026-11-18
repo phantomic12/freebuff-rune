@@ -77,12 +77,25 @@ it, so without those entries the build fails resolving `parley_engine`'s feature
 ## Running it
 
 ```bash
-cargo run -p freebuff-rune                 # the window
+./scripts/run.sh                           # the window (release build)
+cargo run -p freebuff-rune                 # the window (debug)
 cargo test -p freebuff-rune                # layout + interaction checks
 ```
 
-Because every Rune app runs headless, the shell is inspectable from a terminal — something the
-Electron build could not do:
+`scripts/run.sh` starts the installed app's orchestrator, then shows the window; the sidebar footer
+reports the boot phase and, once it settles, "Orchestrator ready". Nothing is needed on screen for
+the rest of the shell — it reads fixtures — so the window appears immediately.
+
+Because every Rune app renders headless, the same layout can be written straight to a PNG, at 2x,
+something the Electron build could not do:
+
+```bash
+./scripts/shot.sh                          # shots/{dark,light,empty,settings,panel-closed}.png
+SIZE=1600x1000 OUT=shots/pr ./scripts/shot.sh
+LIVE=1 ./scripts/shot.sh                   # adds shots/backend-live.png, orchestrator and all
+```
+
+The long form, one scene at a time:
 
 ```bash
 ./target/debug/freebuff-rune.exe --snap shots/dark.png --size 1440x900
@@ -178,7 +191,8 @@ replies, the footer's five states, and (gated) a real orchestrator boot.
 app/src/            the shell: tokens, model, fixtures, orchestrator client, ui/*
 app/src/ui/         chrome, rail, sidebar, transcript, composer, panel, settings, icons, widgets
 docs/port-notes.md  the recovered contracts (boot, handshake, launch token, API surface)
-scripts/            bootstrap-rune.sh — Rune at the pinned revision
+scripts/            bootstrap-rune.sh (Rune at the pinned revision), run.sh (the window),
+                    shot.sh (the PNG set)
 tools/              three read-only helpers used against the installed app; nothing ships from it
 ```
 

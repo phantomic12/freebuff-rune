@@ -80,14 +80,14 @@ fn main() {
                     let seen = live.clone();
                     handle.update(move |s, _| s.backend = live.clone());
                     if settled {
+                        // The same line the footer shows, on stderr: the window is a GUI, and a
+                        // one-line trace of what it reached is the only text a terminal sees.
+                        eprintln!("freebuff-rune: backend {}", seen.detail());
                         let _ = tx.send(seen);
                     }
                 });
-                if snap_backend {
-                    match rx.recv_timeout(std::time::Duration::from_secs(90)) {
-                        Ok(live) => eprintln!("freebuff-rune: backend {}", live.detail()),
-                        Err(_) => eprintln!("freebuff-rune: backend still booting"),
-                    }
+                if snap_backend && rx.recv_timeout(std::time::Duration::from_secs(90)).is_err() {
+                    eprintln!("freebuff-rune: backend still booting");
                 }
             }
             None => eprintln!(

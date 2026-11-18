@@ -82,41 +82,51 @@ fn section_title(label: &str, t: &Tok) -> El {
 
 fn environment(s: &State, t: &Tok) -> El {
     let project = &s.projects[s.active.0].name;
+    let mut card = col()
+        .w_full()
+        .gap(tk::SP3)
+        .padding(tk::SP4)
+        .radius(tk::R_MD)
+        .fill(t.surface2)
+        .border(1.0, t.control_border)
+        .child(
+            row()
+                .items_center()
+                .gap(tk::SP3)
+                .child(icons::globe(t.muted, 13.0))
+                .child(text("This computer").font(tk::ui()).color(t.text))
+                .child(spacer())
+                .child(text(s.location).font(tk::caption()).color(t.faint)),
+        )
+        .child(hline(t))
+        .child(
+            row()
+                .items_center()
+                .gap(tk::SP3)
+                .child(icons::folder(t.muted, 13.0))
+                .child(
+                    text(project.clone())
+                        .font(tk::ui())
+                        .color(t.text)
+                        .truncate(),
+                ),
+        );
+    // The branch the run happens on, when the thread has one: the card answers "where" on both
+    // axes — the machine and the worktree.
+    if let Some(branch) = &s.thread().branch {
+        card = card.child(hline(t)).child(
+            row()
+                .items_center()
+                .gap(tk::SP3)
+                .child(icons::branch(t.muted, 13.0))
+                .child(text(branch.clone()).font(tk::ui()).color(t.text)),
+        );
+    }
     col()
         .w_full()
         .gap(tk::SP4)
         .child(section_title("Environment", t))
-        .child(
-            col()
-                .w_full()
-                .gap(tk::SP3)
-                .padding(tk::SP4)
-                .radius(tk::R_MD)
-                .fill(t.surface2)
-                .border(1.0, t.control_border)
-                .child(
-                    row()
-                        .items_center()
-                        .gap(tk::SP3)
-                        .child(icons::globe(t.muted, 13.0))
-                        .child(text("This computer").font(tk::ui()).color(t.text))
-                        .child(spacer())
-                        .child(text(s.location).font(tk::caption()).color(t.faint)),
-                )
-                .child(hline(t))
-                .child(
-                    row()
-                        .items_center()
-                        .gap(tk::SP3)
-                        .child(icons::folder(t.muted, 13.0))
-                        .child(
-                            text(project.clone())
-                                .font(tk::ui())
-                                .color(t.text)
-                                .truncate(),
-                        ),
-                ),
-        )
+        .child(card)
 }
 
 fn context(s: &State, t: &Tok) -> El {
