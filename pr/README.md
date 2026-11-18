@@ -9,7 +9,7 @@ Fork and branch, ready to open:
 | Issue | **<https://github.com/CodebuffAI/freebuff/issues/1685>** (open) |
 | PR | **<https://github.com/CodebuffAI/freebuff/pull/1686>** (open, `MERGEABLE`, PR-hygiene check passed) |
 | Prototype | **<https://github.com/phantomic12/freebuff-rune>** (public, Apache-2.0) |
-| File | `docs/desktop-shell-contract.md` (4.4 KB) |
+| File | `docs/desktop-shell-contract.md` (7.0 KB, two commits) |
 | Local clone | `upstream-freebuff/` — `origin` = upstream, `fork` = ours |
 
 Verification done:
