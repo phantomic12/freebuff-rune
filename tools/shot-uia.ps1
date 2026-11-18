@@ -9,5 +9,8 @@ Write-Output ("rect {0},{1} {2}x{3} title={4}" -f [int]$r.X, [int]$r.Y, [int]$r.
 $bmp = New-Object System.Drawing.Bitmap ([int]$r.Width), ([int]$r.Height)
 $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.CopyFromScreen([int]$r.X, [int]$r.Y, 0, 0, $bmp.Size)
-$bmp.Save("C:\Users\Yoav\Documents\github\freebuff-rune\extracted\native-win.png", [System.Drawing.Imaging.ImageFormat]::Png)
+$out = if ($args.Count -gt 0) { $args[0] } else { Join-Path (Split-Path $PSScriptRoot -Parent) "shots/window.png" }
+New-Item -ItemType Directory -Force -Path (Split-Path $out -Parent) | Out-Null
+$bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
+Write-Output ("saved {0}" -f $out)
 $g.Dispose(); $bmp.Dispose()
