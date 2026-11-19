@@ -6,7 +6,9 @@ use rune::{ChromeInsets, Color, Cx, El, el, row, text};
 use crate::model::{Mode, State, Status};
 use crate::tokens::{self as tk, Tok, wash};
 use crate::ui::icons;
-use crate::ui::widgets::{button_surface, button_surface_active, dot, hover_row};
+use crate::ui::widgets::{
+    button_surface, button_surface_active, dot, hover_row, icon_button, named,
+};
 
 pub fn view(s: &State, _cx: &mut Cx<State>, t: &Tok, insets: ChromeInsets) -> El {
     let leading = if insets.leading > 0.0 {
@@ -52,9 +54,11 @@ fn history(s: &State, t: &Tok) -> El {
     row()
         .items_center()
         .gap(tk::SP1)
-        .child(button_surface(t, tk::CTL_SM, tk::R_SM).child(icons::chevron_left(t.muted, 14.0)))
         .child(
-            button_surface(t, tk::CTL_SM, tk::R_SM)
+            icon_button(t, tk::CTL_SM, tk::R_SM, "Back").child(icons::chevron_left(t.muted, 14.0)),
+        )
+        .child(
+            icon_button(t, tk::CTL_SM, tk::R_SM, "Forward")
                 .opacity(0.45)
                 .child(icons::chevron_right(t.muted, 14.0)),
         )
@@ -70,6 +74,7 @@ fn mode_switch(s: &State, t: &Tok) -> El {
             .center()
             .cursor(rune::Cursor::Pointer)
             .fill(if on { t.raised } else { Color::TRANSPARENT })
+            .label_static(label)
             .child(
                 text(label)
                     .font(tk::ui())
@@ -99,8 +104,11 @@ fn tabs(s: &State, t: &Tok) -> El {
         strip = strip.child(tab_chip(t, s.tab_thread(*p, *i), on, *p, *i));
     }
     strip
-        .child(button_surface(t, tk::CTL_SM, tk::R_SM).child(icons::plus(t.muted, 14.0)))
-        .child(button_surface(t, tk::CTL_SM, tk::R_SM).child(icons::chevron_down(t.faint, 13.0)))
+        .child(icon_button(t, tk::CTL_SM, tk::R_SM, "New thread").child(icons::plus(t.muted, 14.0)))
+        .child(
+            icon_button(t, tk::CTL_SM, tk::R_SM, "All threads")
+                .child(icons::chevron_down(t.faint, 13.0)),
+        )
 }
 
 fn tab_chip(t: &Tok, thread: &crate::model::Thread, on: bool, p: usize, i: usize) -> El {
@@ -113,6 +121,7 @@ fn tab_chip(t: &Tok, thread: &crate::model::Thread, on: bool, p: usize, i: usize
     };
     let mut chip = hover_row(t, tk::R_SM)
         .key(format!("tab-{p}-{i}"))
+        .label(thread.title.clone())
         .items_center()
         .gap(tk::SP3)
         .h(tk::TAB_H)
@@ -135,7 +144,7 @@ fn tab_chip(t: &Tok, thread: &crate::model::Thread, on: bool, p: usize, i: usize
             .color(if on { t.text } else { t.muted })
             .truncate(),
     )
-    .child(
+    .child(named(
         el().size(16.0, 16.0)
             .radius(4.0)
             .center()
@@ -143,27 +152,31 @@ fn tab_chip(t: &Tok, thread: &crate::model::Thread, on: bool, p: usize, i: usize
             .hover(wash(t.text, 0.12))
             .child(icons::cross(t.faint, 10.0))
             .on_press(move |s: &mut State| s.close_tab(p, i)),
-    )
+        "Close thread",
+    ))
 }
 
 fn trailing(s: &State, t: &Tok) -> El {
     row()
         .items_center()
         .gap(tk::SP2)
-        .child(
+        .child(named(
             button_surface_active(t, tk::CTL_SM, tk::R_SM, s.panel_open)
                 .key("panel-toggle")
                 .child(icons::panels(t.muted, 14.0))
                 .on_press(|s: &mut State| s.panel_open = !s.panel_open),
-        )
-        .child(
+            "Toggle panel",
+        ))
+        .child(named(
             button_surface(t, tk::CTL_SM, tk::R_SM)
                 .child(icons::list(t.muted, 14.0))
                 .on_press(|s: &mut State| s.settings_open = true),
-        )
-        .child(
+            "Settings",
+        ))
+        .child(named(
             button_surface(t, tk::CTL_SM, tk::R_SM)
                 .child(icons::plus(t.muted, 14.0))
                 .on_press(|_s: &mut State| {}),
-        )
+            "More",
+        ))
 }

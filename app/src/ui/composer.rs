@@ -7,7 +7,7 @@ use crate::fixtures::{AD_BODY, AD_CTA, AD_TITLE};
 use crate::model::{State, Status};
 use crate::tokens::{self as tk, Tok, wash};
 use crate::ui::icons;
-use crate::ui::widgets::{button_surface, control_pill};
+use crate::ui::widgets::{control_pill, icon_button, named};
 
 pub fn view(s: &State, _cx: &mut Cx<State>, t: &Tok) -> El {
     col()
@@ -111,7 +111,7 @@ fn controls(s: &State, t: &Tok) -> El {
         .gap(tk::SP3)
         .w_full()
         .child(
-            button_surface(t, 24.0, tk::R_SM)
+            icon_button(t, 24.0, tk::R_SM, "Add attachment")
                 .border(1.0, t.control_border)
                 .child(icons::plus(t.muted, 13.0)),
         )
@@ -126,7 +126,7 @@ fn controls(s: &State, t: &Tok) -> El {
     let running = s.thread().status == Status::Working;
     if running {
         row = row.child(
-            button_surface(t, 30.0, tk::R_SM)
+            icon_button(t, 30.0, tk::R_SM, "Stop")
                 .fill(wash(t.text, 0.1))
                 .child(icons::stop(t.text, 11.0))
                 .on_press(|s: &mut State| {
@@ -137,24 +137,27 @@ fn controls(s: &State, t: &Tok) -> El {
         );
     }
     row.child(
-        el().size(30.0, 30.0)
-            .radius(tk::R_SM)
-            .center()
-            .cursor(rune::Cursor::Pointer)
-            .fill(if can_send {
-                t.primary_action
-            } else {
-                wash(t.text, 0.1)
-            })
-            .hover(wash(t.text, 0.08))
-            .on_press(move |s: &mut State| s.send())
-            .child(icons::arrow_up(
-                if can_send {
-                    t.primary_action_text
+        named(
+            el().size(30.0, 30.0)
+                .radius(tk::R_SM)
+                .center()
+                .cursor(rune::Cursor::Pointer)
+                .fill(if can_send {
+                    t.primary_action
                 } else {
-                    t.faint
-                },
-                14.0,
-            )),
+                    wash(t.text, 0.1)
+                })
+                .hover(wash(t.text, 0.08))
+                .on_press(move |s: &mut State| s.send()),
+            "Send",
+        )
+        .child(icons::arrow_up(
+            if can_send {
+                t.primary_action_text
+            } else {
+                t.faint
+            },
+            14.0,
+        )),
     )
 }

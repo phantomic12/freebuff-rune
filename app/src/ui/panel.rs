@@ -57,23 +57,25 @@ fn tab_strip(t: &Tok) -> El {
                         .color(if on { t.text } else { t.muted })
                         .truncate(),
                 )
-                .child(
+                .child(crate::ui::widgets::named(
                     el().size(14.0, 14.0)
                         .radius(4.0)
                         .center()
                         .hover(wash(t.text, 0.12))
                         .child(icons::cross(t.faint, 9.0)),
-                ),
+                    "Close tab",
+                )),
         );
     }
-    strip.child(spacer()).child(
+    strip.child(spacer()).child(crate::ui::widgets::named(
         el().size(24.0, 24.0)
             .radius(tk::R_SM)
             .center()
             .cursor(rune::Cursor::Pointer)
             .hover(wash(t.text, 0.08))
             .child(icons::plus(t.muted, 13.0)),
-    )
+        "New panel tab",
+    ))
 }
 
 fn section_title(label: &str, t: &Tok) -> El {

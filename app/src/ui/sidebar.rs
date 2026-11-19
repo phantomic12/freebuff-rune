@@ -38,6 +38,8 @@ fn brand(_s: &State, t: &Tok) -> El {
                 .center()
                 .cursor(rune::Cursor::Pointer)
                 .hover(wash(t.text, 0.08))
+                .role("button")
+                .label_static("Search")
                 .child(icons::search(t.muted, 14.0)),
         )
 }
@@ -70,12 +72,13 @@ fn actions(t: &Tok) -> El {
         )
 }
 
-fn action_row(t: &Tok, glyph: El, label: &str, on: impl Fn(&mut State) + 'static) -> El {
+fn action_row(t: &Tok, glyph: El, label: &'static str, on: impl Fn(&mut State) + 'static) -> El {
     hover_row(t, tk::R_SM)
         .items_center()
         .gap(tk::SP3)
         .h(28.0)
         .px(tk::SP4)
+        .label_static(label)
         .on_press(on)
         .child(glyph)
         .child(text(label).font(tk::body()).color(t.text))
@@ -131,6 +134,7 @@ fn thread_row(t: &Tok, s: &State, thread: &Thread, only: bool, p: usize, i: usiz
     };
     let mut r = hover_row(t, tk::R_SM)
         .key(format!("thread-{p}-{i}"))
+        .label(thread.title.clone())
         .items_center()
         .gap(tk::SP3)
         .h(26.0)

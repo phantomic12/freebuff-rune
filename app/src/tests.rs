@@ -289,3 +289,108 @@ fn the_shell_boots_the_real_orchestrator() {
             .status();
     }
 }
+
+#[test]
+fn the_boot_line_parsers_survive_the_ugly_cases() {
+    use crate::orchestrator as o;
+
+    // A Windows pipe can deliver `\r\n`; `BufRead::lines` strips it, but these parsers are also
+    // used on raw text (recordings, other clients), so they take a trimmed line either way.
+    assert_eq!(
+        o::parse_phase("[orchestrator-phase] listen\r"),
+        Some("listen")
+    );
+    assert_eq!(
+        o::parse_phase("   [orchestrator-phase] auth   "),
+        Some("auth")
+    );
+    assert_eq!(o::parse_phase(""), None);
+    assert_eq!(
+        o::parse_phase("[orchestrator-ready] {}"),
+        None,
+        "the wrong prefix is not a phase"
+    );
+
+    // The ready line, in the shapes a different build might print it.
+    assert_eq!(
+        o::parse_ready(r#"[orchestrator-ready] {"pid":32704,"launchId":"x","port":7781}"#),
+        Some((7781, 32704)),
+        "key order is not guaranteed"
+    );
+    assert_eq!(
+        o::parse_ready(r#"[orchestrator-ready] {"launchId":{"port":1},"port":"60111","pid":7}"#),
+        Some((60111, 7)),
+        "a string port still reads, and a decoy `port` in a nested value is not taken"
+    );
+    assert_eq!(
+        o::parse_ready(r#"[orchestrator-ready] {"port":70000,"pid":7}"#),
+        None,
+        "a port that cannot be one is a misread, not a wrap to 4464"
+    );
+    assert_eq!(
+        o::parse_ready(r#"[orchestrator-ready] {"port":0}"#),
+        None,
+        "port 0 means the server let the OS pick, which is not what we asked for"
+    );
+    assert_eq!(
+        o::parse_ready(r#"[orchestrator-ready] {"port":7781,"pid":0}"#),
+        Some((7781, 0)),
+        "an older orchestrator without a pid still boots"
+    );
+    assert_eq!(o::parse_ready("[orchestrator-ready] no json here"), None);
+
+    // `/api/auth/status`: the top-level flag wins over anything nested behind it.
+    assert!(o::parse_authed(
+        "{\"authed\": true, \"user\": {\"id\": \"u1\"}}"
+    ));
+    assert!(!o::parse_authed("{\"authed\": false, \"user\": null}"));
+    assert!(
+        !o::parse_authed(r#"{"authed":false,"user":{"authed":true}}"#),
+        "the first `authed` is the real one; a nested one must not flip the answer"
+    );
+    assert!(
+        !o::parse_authed(r#"{"authenticated":true}"#),
+        "substring is not the field"
+    );
+}
+
+#[test]
+fn the_failure_tail_keeps_its_last_line_without_splitting_a_character() {
+    use crate::orchestrator::push_tail;
+
+    // 3 000 chars of a multi-byte character straddles the cut: the old code panicked here.
+    let mut tail = String::new();
+    push_tail(&mut tail, &"é".repeat(2600));
+    push_tail(&mut tail, "[orchestrator] another instance has the profile");
+    assert!(
+        tail.len() < 3100,
+        "the tail is bounded: {} bytes",
+        tail.len()
+    );
+    assert!(
+        tail.ends_with("has the profile\n"),
+        "the line the footer shows survives: {tail:?}"
+    );
+}
+
+#[test]
+fn every_button_has_a_name() {
+    // An icon-only control without a label is announced as an image with no name. The shell has
+    // 40-odd buttons, most of them glyphs, so the invariant is worth a test rather than a habit.
+    let rt = runtime(State::seed());
+    let elements = rt.elements();
+    let unnamed: Vec<String> = elements
+        .iter()
+        .filter(|e| e.role == "button" && e.label.as_deref().map_or(true, str::is_empty))
+        .map(|e| format!("{} ({})", e.key.as_deref().unwrap_or("?"), e.path))
+        .collect();
+    assert!(unnamed.is_empty(), "unlabelled buttons: {unnamed:?}");
+    let buttons = elements.iter().filter(|e| e.role == "button").count();
+    assert!(
+        buttons >= 40,
+        "expected the whole shell's buttons, saw {buttons}"
+    );
+    // The glyphs inside them are decorative: `icons::lines` and `icons::solid` mark themselves
+    // `a11y_hidden`, so the accessibility tree (what `--tree` dumps) carries no nameless images
+    // even though they still draw. That is the layer to check, not this list.
+}

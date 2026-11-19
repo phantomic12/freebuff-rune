@@ -18,13 +18,15 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> Vec<[f32; 2]> {
     vec![[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]
 }
 
-/// A stroked icon: `parts` are polylines in a 16×16 box, drawn `size` points square.
+/// A stroked icon: `parts` are polylines in a 16×16 box, drawn `size` points square. Icons are
+/// decorative — the control that holds one carries the name — so they are hidden from assistive
+/// technology rather than announced as nameless images.
 pub fn lines(c: Color, size: f32, parts: &[Vec<[f32; 2]>]) -> El {
     let mut sh = Shape::new().view_box(16.0, 16.0);
     for p in parts {
         sh = sh.stroke(p.clone(), 1.5, c);
     }
-    canvas(sh).size(size, size)
+    canvas(sh).size(size, size).a11y_hidden()
 }
 
 /// A filled icon: same box, filled polygons instead of strokes.
@@ -33,7 +35,7 @@ pub fn solid(c: Color, size: f32, parts: &[Vec<[f32; 2]>]) -> El {
     for p in parts {
         sh = sh.fill(p.clone(), c);
     }
-    canvas(sh).size(size, size)
+    canvas(sh).size(size, size).a11y_hidden()
 }
 
 pub fn chevron_left(c: Color, size: f32) -> El {
@@ -253,5 +255,5 @@ pub fn logo(c: Color, size: f32) -> El {
         .view_box(77.18, 77.19)
         .fill(outer, c)
         .fill(inner, c);
-    canvas(sh).size(size, size)
+    canvas(sh).size(size, size).a11y_hidden()
 }

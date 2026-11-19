@@ -6,7 +6,7 @@ use rune::{Color, El, col, el, row, spacer, text};
 use crate::model::State;
 use crate::tokens::{self as tk, Tok, wash};
 use crate::ui::icons;
-use crate::ui::widgets::{button_surface, hline};
+use crate::ui::widgets::{hline, icon_button};
 
 pub fn overlay(s: &State, t: &Tok) -> El {
     let mut scrim = el()
@@ -59,7 +59,7 @@ fn header(t: &Tok) -> El {
         .child(text("Settings").font(tk::title()).color(t.text))
         .child(spacer())
         .child(
-            button_surface(t, 28.0, tk::R_SM)
+            icon_button(t, 28.0, tk::R_SM, "Close settings")
                 .hover(wash(t.text, 0.08))
                 .on_press(|s: &mut State| s.settings_open = false)
                 .child(icons::cross(t.muted, 13.0)),

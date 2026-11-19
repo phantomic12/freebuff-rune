@@ -110,7 +110,7 @@ fn approval_card(t: &Tok, title: &str, body: &str) -> El {
             row()
                 .items_center()
                 .gap(tk::SP3)
-                .child(
+                .child(crate::ui::widgets::named(
                     el().px(tk::SP5)
                         .h(28.0)
                         .radius(tk::R_SM)
@@ -119,8 +119,9 @@ fn approval_card(t: &Tok, title: &str, body: &str) -> El {
                         .fill(t.primary_action)
                         .hover(wash(t.text, 0.08))
                         .child(text("Approve").font(tk::ui()).color(t.primary_action_text)),
-                )
-                .child(
+                    "Approve",
+                ))
+                .child(crate::ui::widgets::named(
                     el().px(tk::SP5)
                         .h(28.0)
                         .radius(tk::R_SM)
@@ -129,7 +130,8 @@ fn approval_card(t: &Tok, title: &str, body: &str) -> El {
                         .border(1.0, t.control_border)
                         .hover(wash(t.text, 0.06))
                         .child(text("Deny").font(tk::ui()).color(t.muted)),
-                ),
+                    "Deny",
+                )),
         )
 }
 
@@ -162,7 +164,7 @@ fn empty(s: &State, t: &Tok) -> El {
         )
         .child(spacer());
     for prompt in starters {
-        col = col.child(
+        col = col.child(crate::ui::widgets::named(
             el().px(tk::SP5)
                 .py(tk::SP3)
                 .radius(999.0)
@@ -171,7 +173,8 @@ fn empty(s: &State, t: &Tok) -> El {
                 .cursor(rune::Cursor::Pointer)
                 .hover(wash(t.text, 0.06))
                 .child(text(prompt).font(tk::ui()).color(t.text)),
-        );
+            "Suggestion",
+        ));
     }
     col
 }

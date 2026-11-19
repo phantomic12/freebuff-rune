@@ -14,6 +14,19 @@ pub fn button_surface(t: &Tok, size: f32, radius: f32) -> El {
         .press(wash(t.text, 0.11))
 }
 
+/// An icon-only button: [`button_surface`] plus the role and name a screen reader needs. Without
+/// them the glyph is announced as "image" with no name, which is what an unlabelled control is.
+pub fn icon_button(t: &Tok, size: f32, radius: f32, label: &'static str) -> El {
+    button_surface(t, size, radius)
+        .role("button")
+        .label_static(label)
+}
+
+/// The same name for a control already built by hand (an active fill, a border, a key).
+pub fn named(e: El, label: &'static str) -> El {
+    e.role("button").label_static(label)
+}
+
 /// The same, already filled as active: the rail's selected button, a toggled panel.
 pub fn button_surface_active(t: &Tok, size: f32, radius: f32, active: bool) -> El {
     let mut b = button_surface(t, size, radius);

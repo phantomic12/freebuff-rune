@@ -365,12 +365,18 @@ fn spawn_lines<R: Read + Send + 'static>(reader: BufReader<R>, tx: mpsc::Sender<
     });
 }
 
-fn push_tail(tail: &mut String, line: &str) {
+pub(crate) fn push_tail(tail: &mut String, line: &str) {
     tail.push_str(line);
     tail.push('\n');
     // Upstream keeps ~3000 chars for its failure dialog; the last line is what the label shows.
     if tail.len() > 3000 {
-        let cut = tail.len() - 3000;
+        // Cutting at a byte offset can land inside a multi-byte character — a path with an
+        // accent or a title with an emoji is enough — and slicing there panics. Step to a
+        // boundary first.
+        let mut cut = tail.len() - 3000;
+        while !tail.is_char_boundary(cut) {
+            cut += 1;
+        }
         let keep = tail[cut..].find('\n').map_or(cut, |i| cut + i + 1);
         tail.drain(..keep);
     }
@@ -399,14 +405,19 @@ pub fn parse_phase(line: &str) -> Option<&str> {
 pub fn parse_ready(line: &str) -> Option<(u16, u32)> {
     let rest = line.trim().strip_prefix(READY_PREFIX)?;
     let port = number_after(rest, "\"port\"")?;
+    // A port that cannot be one is a misread line, not a boot: `as u16` would silently wrap 70000
+    // into 4464 and then poll a stranger's socket.
+    let port = u16::try_from(port).ok().filter(|p| *p != 0)?;
     // The pid rides the same line; an older orchestrator that omits it still boots.
     let pid = number_after(rest, "\"pid\"").unwrap_or(0);
-    Some((port as u16, pid))
+    Some((port, pid))
 }
 
-/// The first integer after `key` in a small JSON object.
+/// The last integer after `key` in a small JSON object. The ready line prints
+/// `{launchId, pid, port}`, so the top-level `port` is the *last* occurrence; a decoy key nested
+/// in an earlier value must not win.
 fn number_after(json: &str, key: &str) -> Option<u32> {
-    let at = json.find(key)?;
+    let at = json.rfind(key)?;
     let digits: String = json[at + key.len()..]
         .chars()
         .skip_while(|c| !c.is_ascii_digit())

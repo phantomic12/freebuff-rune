@@ -6,7 +6,7 @@ use rune::{Cx, El, col, el, spacer, text};
 use crate::model::State;
 use crate::tokens::{self as tk, Tok, wash};
 use crate::ui::icons;
-use crate::ui::widgets::button_surface;
+use crate::ui::widgets::icon_button;
 
 pub fn view(s: &State, _cx: &mut Cx<State>, t: &Tok) -> El {
     col()
@@ -16,23 +16,49 @@ pub fn view(s: &State, _cx: &mut Cx<State>, t: &Tok) -> El {
         .items_center()
         .py(tk::SP4)
         .gap(tk::SP4)
-        .child(nav(t, icons::home(t.muted, 18.0), true, |s| {
+        .child(nav(t, icons::home(t.muted, 18.0), true, "Home", |s| {
             s.settings_open = false
         }))
-        .child(nav(t, icons::panels(t.muted, 18.0), false, |s| {
-            s.sidebar_open = !s.sidebar_open
-        }))
-        .child(nav(t, icons::squares(t.muted, 18.0), false, |_s| {}))
-        .child(nav(t, icons::gift(t.muted, 18.0), false, |_s| {}))
+        .child(nav(
+            t,
+            icons::panels(t.muted, 18.0),
+            false,
+            "Toggle sidebar",
+            |s| s.sidebar_open = !s.sidebar_open,
+        ))
+        .child(nav(
+            t,
+            icons::squares(t.muted, 18.0),
+            false,
+            "Extensions",
+            |_s| {},
+        ))
+        .child(nav(
+            t,
+            icons::gift(t.muted, 18.0),
+            false,
+            "Invite friends",
+            |_s| {},
+        ))
         .child(spacer())
-        .child(nav(t, icons::gear(t.muted, 18.0), s.settings_open, |s| {
-            s.settings_open = !s.settings_open
-        }))
+        .child(nav(
+            t,
+            icons::gear(t.muted, 18.0),
+            s.settings_open,
+            "Settings",
+            |s| s.settings_open = !s.settings_open,
+        ))
         .child(avatar(s, t))
 }
 
-fn nav(t: &Tok, glyph: El, active: bool, on: impl Fn(&mut State) + 'static) -> El {
-    let mut b = button_surface(t, 36.0, tk::R_MD);
+fn nav(
+    t: &Tok,
+    glyph: El,
+    active: bool,
+    label: &'static str,
+    on: impl Fn(&mut State) + 'static,
+) -> El {
+    let mut b = icon_button(t, 36.0, tk::R_MD, label);
     if active {
         b = b.fill(wash(t.text, 0.09));
     }
@@ -48,5 +74,7 @@ fn avatar(_s: &State, t: &Tok) -> El {
         .border(1.0, wash(t.text, 0.12))
         .cursor(rune::Cursor::Pointer)
         .hover(wash(t.text, 0.2))
+        .role("button")
+        .label_static("Account")
         .child(text("U").font(tk::label()).color(t.text))
 }
