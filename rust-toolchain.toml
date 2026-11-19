@@ -1,0 +1,6 @@
+# Rune is consumed by git revision and the port is checked on one toolchain; pinning it here keeps
+# CI and contributors on the same rustc instead of drifting with whatever `stable` is that week.
+# Bump deliberately, with a `cargo build` on a clean cache.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]

@@ -1,5 +1,6 @@
 /target
 /shots
+/renders
 /build.log
 # Reference artifacts extracted from the installed Electron app (not redistributable).
 /extracted

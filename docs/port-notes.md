@@ -93,6 +93,18 @@ ads, `/api/v1/*` — lives behind the launch token and, on a signed-out profile,
 Verified against the running signed-in app: `/api/threads`, `/api/events` → `401 unauthorized`
 without the launch id (same on any `/api/*`).
 
+What the four groups actually contain, read from the bundle — none of them carries threads:
+
+| group | routes |
+|---|---|
+| `appearanceRoutes` | `POST /api/appearance/wallpapers`, `GET /api/appearance/wallpapers/:filename` |
+| `authRoutes` | `/api/auth/status`, `login/start`, `login/cancel`, `logout` |
+| `hostedWorkspaceRoutes` | workspace handoff, all of it behind a signed-in session |
+| `diagnosticsRoutes` | `POST /api/telemetry/funnel` and its siblings — write-only |
+
+So the theme is a renderer-local setting (nothing to sync), and the only readable state a signed-out
+profile offers is `/api/auth/status` — which is exactly what the port uses.
+
 What the shipped shell UI itself calls (all of it):
 `/api/auth/status`, `/api/auth/login/start`, `/api/auth/login/cancel`, `/api/auth/logout`,
 `/api/diagnostics/renderer-boot`, `/api/telemetry/funnel`. Its network helpers are `Dm(url, opts)`

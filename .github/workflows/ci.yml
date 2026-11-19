@@ -21,9 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Matches rust-toolchain.toml. `@stable` would drift past the pinned revision of Rune.
       - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.0
           components: rustfmt, clippy
 
       - name: Cache cargo and target
@@ -49,5 +51,18 @@ jobs:
       - name: Tests
         run: cargo test -p freebuff-rune
 
-      # The live test spawns the installed app's orchestrator, which CI does not have; snapshots
-      # need a GPU. Both stay out of CI on purpose.
+      # The layout is checkable without a window, so the renders are too: a reviewer should be able
+      # to look at the thing without building it. If the runner has no usable adapter this step is
+      # the one that says so.
+      - name: Renders
+        run: BIN=target/debug/freebuff-rune.exe OUT=renders ./scripts/shot.sh
+
+      - name: Upload renders
+        uses: actions/upload-artifact@v4
+        with:
+          name: renders
+          path: renders/
+          if-no-files-found: error
+
+      # The live test spawns the installed app's orchestrator, which CI does not have. It stays
+      # behind FREEBUFF_LIVE_TEST on purpose.
