@@ -9,3 +9,4 @@
 
 # Rune is fetched by scripts/bootstrap-rune.sh, not committed (181 MB).
 /vendor/rune
+/rec

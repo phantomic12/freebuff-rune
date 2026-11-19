@@ -147,6 +147,23 @@ Two switches control the orchestrator at boot:
 `FREEBUFF_RESOURCES_DIR`, `FREEBUFF_BUN_PATH` and `FREEBUFF_DESKTOP_STATE_PATH` override what
 `orchestrator::Config::discover` finds, the same overrides upstream honours.
 
+## Recording the real API
+
+Everything the shell does not implement yet — threads, chat, the event stream, the ad creative —
+exists on the orchestrator behind the launch token, and its request shapes are not in any shipped
+file. They can still be recorded from a live session:
+
+```bash
+scripts/record.sh          # this shell, fixtures UI, real orchestrator — records boot traffic
+scripts/record.sh --app    # the installed app (close it first), for a signed-in session
+```
+
+`tools/record-orchestrator.mjs` is a `BUN_OPTIONS` preload, so it loads inside the server the shell
+spawns: no install is patched, no port is proxied. One JSONL line per exchange, credentials redacted,
+bodies shortened to their shape. Signed out, that already answers `/healthz` and `/api/auth/status`
+(see `docs/port-notes.md` §5 for the recorded shapes). Treat a recording as sensitive — with a
+signed-in session it can contain conversation content.
+
 ## The orchestrator, brought back
 
 The data in the real app lives in a Bun process the Electron shell spawns
@@ -209,7 +226,7 @@ app/src/            the shell: tokens, model, fixtures, orchestrator client, ui/
 app/src/ui/         chrome, rail, sidebar, transcript, composer, panel, settings, icons, widgets
 docs/port-notes.md  the recovered contracts (boot, handshake, launch token, API surface)
 scripts/            bootstrap-rune.sh (Rune at the pinned revision), run.sh (the window),
-                    shot.sh (the PNG set)
+                    shot.sh (the PNG set), record.sh (record the real API traffic)
 tools/              three read-only helpers used against the installed app; nothing ships from it
 docs/screenshots/   PNGs from scripts/shot.sh, used by the README
 ```

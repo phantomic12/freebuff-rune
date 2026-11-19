@@ -113,8 +113,30 @@ What the shipped shell UI itself calls (all of it):
 
 The thread/chat/event request shapes are not recoverable from the shipped files: the interface
 that drives them is the signed hot bundle (`orchestrator-bundles/state.json`:
-`{"current":null,"bad":[…]} ` on this install — none present). The next step is a loopback proxy
-in front of a real session, recording one exchange per feature.
+`{"current":null,"bad":[...]}` on this install — none present).
+
+They *are* recoverable from a running session, which is what `tools/record-orchestrator.mjs` is for.
+It is a `BUN_OPTIONS` preload: the shell hands its environment to the orchestrator it spawns, so the
+recorder loads inside the server without patching the install. It wraps `Bun.serve` and writes one
+JSONL line per exchange — path, method, headers with credentials redacted, request body shape,
+status, response body shape (streaming responses are logged as metadata only, since reading them
+would consume the live channel). `scripts/record.sh` sets that up and launches either this shell or
+the installed app.
+
+What it records with nothing signed in:
+
+```json
+{"method":"GET","path":"/healthz","res":{"status":200,
+  "body":{"ok":true,"launchId":"…","pid":3028,"port":62587}}}
+{"method":"GET","path":"/api/auth/status","res":{"status":200,
+  "body":{"authed":false,"user":null,"login":{"phase":"idle"},
+          "sessionRefunds":{"accountId":null,"items":[]}}}}
+```
+
+So `/api/auth/status` carries `user`, `login.phase` and `sessionRefunds` — more than the signed-out
+boolean the footer shows, and enough to draw a signed-in profile once there is a session. Thread,
+chat and event traffic needs a signed-in run: `scripts/record.sh --app` after closing the app, sign
+in, drive one thread, close it. Treat the recording as sensitive; it can hold conversation content.
 
 ## 6. What the port implements
 
