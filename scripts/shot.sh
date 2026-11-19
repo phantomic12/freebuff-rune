@@ -14,9 +14,12 @@ bin=${BIN:-target/release/freebuff-rune}
 size=${SIZE:-1440x900}
 out=${OUT:-shots}
 
-if [ ! -x "$bin" ]; then
-  echo "building $bin" >&2
-  cargo build --release -p freebuff-rune
+# Build the profile the binary path implies, so passing BIN never builds the wrong one.
+if [ ! -x "$bin" ] && [ ! -f "$bin.exe" ]; then
+  case "$bin" in
+    *release*) echo "building release" >&2; cargo build --release -p freebuff-rune ;;
+    *) echo "building debug" >&2; cargo build -p freebuff-rune ;;
+  esac
 fi
 
 mkdir -p "$out"

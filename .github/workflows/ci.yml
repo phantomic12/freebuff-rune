@@ -54,6 +54,9 @@ jobs:
       # The layout is checkable without a window, so the renders are too: a reviewer should be able
       # to look at the thing without building it. If the runner has no usable adapter this step is
       # the one that says so.
+      - name: Build the binary
+        run: cargo build -p freebuff-rune
+
       - name: Renders
         run: BIN=target/debug/freebuff-rune.exe OUT=renders ./scripts/shot.sh
 
