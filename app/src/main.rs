@@ -7,12 +7,14 @@
 //!   cargo run -p freebuff-rune -- --tree tree.json
 
 mod fixtures;
+mod keys;
 mod model;
 mod orchestrator;
 #[cfg(test)]
 mod tests;
 mod tokens;
 mod ui;
+mod window_state;
 
 use model::State;
 use rune::{App, AppSpec, Cx, El, Titlebar};
@@ -20,6 +22,11 @@ use tokens::TABBAR_H;
 
 fn view(s: &State, cx: &mut Cx<State>) -> El {
     ui::view(s, cx)
+}
+
+/// The menu's accelerators, routed app-wide: they work with the composer focused.
+fn shortcuts(s: &mut State, ev: &rune::KeyEvent, tx: &mut rune::Tx) -> bool {
+    keys::handle(s, ev, tx)
 }
 
 fn main() {
@@ -51,12 +58,35 @@ fn main() {
                 s.sidebar_open = false;
             }),
         ],
+        on_key: Some(shortcuts),
         ..AppSpec::new("Freebuff", (1440.0, 900.0), State::seed, view)
     };
 
     // The app draws its own 44-point tab bar and keeps its window controls over it; on Windows
     // that replaces the native caption entirely and Rune draws the caption buttons.
-    let app = App::new(spec).titlebar(Titlebar::new(TABBAR_H));
+    let mut app = App::new(spec).titlebar(Titlebar::new(TABBAR_H));
+
+    // Remember the size the window was last left at. `on_window` fires as the native window is
+    // created, so the saved size applies before the first frame rather than as a visible jump;
+    // `on_frame_drawn` is the only place the current size is observable. Neither runs headless, so
+    // a snapshot keeps exactly the size it was asked for.
+    let restored = window_state::load();
+    if let Some((w, h)) = restored {
+        app = app.on_window(move |handle: &rune::WindowHandle| handle.resize_instant((w, h)));
+    }
+    let mut last = restored;
+    let mut written = std::time::Instant::now();
+    app = app.on_frame_drawn(move |rt: &rune::Runtime<State>| {
+        let size = Some(rt.viewport);
+        if size == last || written.elapsed() < std::time::Duration::from_millis(900) {
+            return;
+        }
+        if let Some((w, h)) = window_state::sane(rt.viewport.0, rt.viewport.1) {
+            window_state::save(w, h);
+            last = size;
+            written = std::time::Instant::now();
+        }
+    });
 
     // The data in the real app comes from the Bun orchestrator the Electron shell spawns. This
     // shell spawns the same one, with the same boot contract (see `orchestrator.rs`), and shows

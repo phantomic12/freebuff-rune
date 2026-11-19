@@ -213,11 +213,16 @@ closer to ten).
 - Settings sheet: light/dark switch that re-tokenises the whole shell live, plus the shell rows.
 - Boot, supervise and shut down a real Freebuff orchestrator, and show what it reached.
 - Scroll areas with stick-to-bottom on the transcript.
+- The Electron menu's keyboard shortcuts (Ctrl/⌘ + `,` `T` `Shift+T` `W` `Shift+W`), routed
+  app-wide so they work while the composer has focus.
+- The window's size remembered between runs (`~/.config/freebuff-rune/window.json`).
 - Accessibility roles/labels on the shell, tabs, panel, composer field and backend status.
 
 Tests cover: pane geometry, tab press → thread switch, sidebar open → new tab, panel toggle,
-typing/backspace/Enter through the edit model, the boot-line parsers, plain and chunked HTTP
-replies, the footer's five states, and (gated) a real orchestrator boot.
+typing/backspace/Enter through the edit model, the menu chords reaching the app with the composer
+focused, window-size round-trip and rejection, every button carrying a name, the boot-line
+parsers on their ugly cases, plain and chunked HTTP replies, the footer's five states, and
+(gated) a real orchestrator boot.
 
 ## Repository layout
 

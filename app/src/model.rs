@@ -69,6 +69,9 @@ pub struct State {
     /// The threads with a tab in the title bar, in the order they were opened — the app's
     /// `.tabs` list, which holds what you opened rather than every thread in the sidebar.
     pub open_tabs: Vec<(usize, usize)>,
+    /// Tabs closed with the keyboard, for `mod+shift+t`. The real app keeps its closed-tab
+    /// history in the window, so this is the same habit, bounded so it cannot grow forever.
+    pub reopen_stack: Vec<(usize, usize)>,
     pub draft: TextEdit,
     pub model: &'static str,
     pub location: &'static str,
@@ -90,6 +93,7 @@ impl State {
             projects: crate::fixtures::projects(),
             active: (0, 0),
             open_tabs: vec![(0, 0), (1, 0), (2, 0)],
+            reopen_stack: Vec::new(),
             draft: TextEdit::new(""),
             model: "DeepSeek V4.1 Flash Fast High",
             location: "Local",
@@ -148,6 +152,44 @@ impl State {
         self.open_tabs.retain(|tab| *tab != (p, t));
         if self.active == (p, t) {
             self.active = self.open_tabs[self.open_tabs.len() - 1];
+        }
+        if self.reopen_stack.len() >= 10 {
+            self.reopen_stack.remove(0);
+        }
+        self.reopen_stack.push((p, t));
+    }
+
+    /// `mod+shift+t`: the most recently closed tab comes back, closing nothing else.
+    pub fn reopen_tab(&mut self) -> bool {
+        let Some(tab) = self.reopen_stack.pop() else {
+            return false;
+        };
+        if !self.open_tabs.contains(&tab) {
+            self.open_tabs.push(tab);
+        }
+        self.active = tab;
+        true
+    }
+
+    /// `mod+w` on the focused tab. Another tab takes its place, as in the menu command.
+    pub fn close_active_tab(&mut self) {
+        self.close_tab(self.active.0, self.active.1);
+    }
+
+    /// `mod+t`: a thread of the active project that does not already have a tab. A real new
+    /// thread needs the orchestrator (#1685); with the fixtures this opens the project's next one.
+    pub fn new_tab(&mut self) {
+        // The active project first, then the others in sidebar order: a thread that is not already
+        // a tab gets one. Nothing to open when every thread is.
+        let order = std::iter::once(self.active.0).chain(0..self.projects.len());
+        for p in order {
+            for t in 0..self.projects[p].threads.len() {
+                if !self.open_tabs.contains(&(p, t)) {
+                    self.open_tabs.push((p, t));
+                    self.active = (p, t);
+                    return;
+                }
+            }
         }
     }
 

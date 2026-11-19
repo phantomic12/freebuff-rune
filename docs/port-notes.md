@@ -152,3 +152,30 @@ in, drive one thread, close it. Treat the recording as sensitive; it can hold co
 
 Verified: real boot to `/healthz`, signed-out detection via `/api/auth/status`, orchestrator
 exits ≤2 s after the shell is killed, profile-lock failure surfaced with its stderr line.
+## 7. Keyboard and window memory
+
+The menu's accelerators survive the port. `app-menu.cjs` (in `app.asar`) declares them as
+`CmdOrCtrl+` chords; the native shell binds the same set on Rune's `on_key`, so they work with
+the composer focused, which is exactly the case a native app has to defend:
+
+| Menu accelerator | The shell does |
+|---|---|
+| `CmdOrCtrl+,` | open/close Settings |
+| `CmdOrCtrl+T` | open a thread that has no tab yet |
+| `CmdOrCtrl+Shift+T` | reopen the last closed tab |
+| `CmdOrCtrl+W` | close the active tab |
+| `CmdOrCtrl+Shift+W` | close the window |
+
+Two menu entries are deliberately left out: `CmdOrCtrl+R` reloads a page that no longer exists
+(the state is the app), and `CmdOrCtrl+O` needs a folder picker this shell does not have yet.
+A real *new* thread (`CmdOrCtrl+T`) needs the orchestrator — issue #1685's subject — so while
+the fixtures stand in, the chord opens the project's next untabbed thread. Rune delivers a
+chord with Shift as the shifted character (`Key::Command('T')`), which the tests encode.
+
+The window's size is remembered across runs. Electron left that to Chromium; a native window
+must do it itself. `app/src/window_state.rs` writes two numbers to
+`~/.config/freebuff-rune/window.json` (atomic: write to a temp then rename, so a crash cannot
+leave a half file), applies the saved size as the native window is created, and refuses a size
+that cannot be a window. Position is *not* persisted: Rune can set a window's position but not
+read it back, so there is nothing to remember yet — a restored size at the default position is
+honest, an invented one would move the window somewhere the person did not put it.

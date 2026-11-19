@@ -394,3 +394,53 @@ fn every_button_has_a_name() {
     // `a11y_hidden`, so the accessibility tree (what `--tree` dumps) carries no nameless images
     // even though they still draw. That is the layer to check, not this list.
 }
+
+#[test]
+fn the_menu_chords_reach_the_app_with_the_composer_focused() {
+    use crate::keys;
+
+    let mut rt = runtime(State::seed());
+    rt.on_key = Some(keys::handle);
+
+    // Typing goes to the composer, which is the point: the chords still work from there.
+    tap(&mut rt, "composer-field");
+    let before = rt.state.open_tabs.len();
+    assert_eq!(before, 3);
+
+    let chord = |c: char, shift: bool| KeyEvent {
+        key: Key::Command(if shift { c.to_ascii_uppercase() } else { c }),
+        mods: Mods {
+            cmd: true,
+            ctrl: true,
+            shift,
+            ..Mods::default()
+        },
+    };
+
+    rt.key(chord('w', false));
+    rt.frame(1.0 / 60.0);
+    assert_eq!(rt.state.open_tabs.len(), before - 1, "mod+w closes the tab");
+
+    rt.key(chord('T', true));
+    rt.frame(1.0 / 60.0);
+    assert_eq!(
+        rt.state.open_tabs.len(),
+        before,
+        "mod+shift+t brings it back"
+    );
+
+    rt.key(chord('t', false));
+    rt.frame(1.0 / 60.0);
+    assert_eq!(
+        rt.state.open_tabs.len(),
+        before + 1,
+        "mod+t opens a thread of the project"
+    );
+
+    rt.key(chord(',', false));
+    rt.frame(1.0 / 60.0);
+    assert!(rt.state.settings_open, "mod+, opens settings");
+    rt.key(chord(',', false));
+    rt.frame(1.0 / 60.0);
+    assert!(!rt.state.settings_open, "and closes them again");
+}
