@@ -164,6 +164,11 @@ bodies shortened to their shape. Signed out, that already answers `/healthz` and
 (see `docs/port-notes.md` §5 for the recorded shapes). Treat a recording as sensitive — with a
 signed-in session it can contain conversation content.
 
+That is not theoretical: one signed-in boot (83 exchanges) is written up in
+`docs/port-notes.md` §8 — the whole `/api/hosted-workspace/*` surface, its `operation` style, the
+thread record the sidebar draws, and why a `409` there is a state rather than a failure. The
+message stream is the one piece still missing, and it needs a turn run.
+
 ## The orchestrator, brought back
 
 The data in the real app lives in a Bun process the Electron shell spawns

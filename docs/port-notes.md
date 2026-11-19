@@ -111,9 +111,10 @@ What the shipped shell UI itself calls (all of it):
 (fetch + 30 s timeout) and `RS(url, body)` (fire-and-forget POST), both adding
 `x-freebuff-launch-id`.
 
-The thread/chat/event request shapes are not recoverable from the shipped files: the interface
-that drives them is the signed hot bundle (`orchestrator-bundles/state.json`:
-`{"current":null,"bad":[...]}` on this install — none present).
+The thread/chat/event request shapes are not in the shipped files: the interface that drives them
+is the signed hot bundle (`orchestrator-bundles/state.json`: `{"current":null,"bad":[...]}` on this
+install — none present). They are, however, recoverable from a running session, and §8 is the
+result of doing it.
 
 They *are* recoverable from a running session, which is what `tools/record-orchestrator.mjs` is for.
 It is a `BUN_OPTIONS` preload: the shell hands its environment to the orchestrator it spawns, so the
@@ -134,9 +135,10 @@ What it records with nothing signed in:
 ```
 
 So `/api/auth/status` carries `user`, `login.phase` and `sessionRefunds` — more than the signed-out
-boolean the footer shows, and enough to draw a signed-in profile once there is a session. Thread,
-chat and event traffic needs a signed-in run: `scripts/record.sh --app` after closing the app, sign
-in, drive one thread, close it. Treat the recording as sensitive; it can hold conversation content.
+boolean the footer shows, and enough to draw a signed-in profile once there is a session. A
+signed-in boot is where the rest of the surface shows up: §8 records one, and lists what is still
+out of reach (the message stream, which needs a turn run). Treat a recording as sensitive; it can
+hold conversation content, which is why the shapes in §8 are written with the values dropped.
 
 ## 6. What the port implements
 
@@ -179,3 +181,66 @@ leave a half file), applies the saved size as the native window is created, and 
 that cannot be a window. Position is *not* persisted: Rune can set a window's position but not
 read it back, so there is nothing to remember yet — a restored size at the default position is
 honest, an invented one would move the window somewhere the person did not put it.
+
+## 8. The hosted-workspace surface, as recorded
+
+The shipped route table in `orchestrator.js` lists four route groups; what the renderer actually
+calls was learned by recording a real boot, not by reading the bundle. `tools/record-orchestrator.mjs`
+is a Bun preload that wraps `Bun.serve` and writes one JSONL line per exchange (`scripts/record.sh
+--app` launches the installed app with it). One signed-in boot, 83 exchanges, no window driven:
+
+```
+GET  /healthz                             200  {ok, launchId, pid, port}
+GET  /                                    200  the renderer's index.html
+GET  /assets/*, /fonts/*                  200  the UI bundle and font
+GET  /api/auth/status                     200  {authed, user:{id,name,email}, login:{phase}, sessionRefunds:{accountId, items[]}}
+GET  /api/hosted-workspace/status         200  polled 23 times in that boot
+POST /api/diagnostics/renderer-health     202  {rendererPrivateKb, rendererWorkingSetKb, sampledAt, systemFreeKb, systemTotalKb}
+POST /api/hosted-workspace/*              200/409
+```
+
+The interesting part is the second group: it is **one endpoint per resource with an `operation`
+field**, not REST verbs. Every body carries `accountId`, and the reply is the whole slice of state
+the caller needs, not a mutation result — the shell re-renders from it.
+
+| Endpoint | `operation` values seen | Reply, top level |
+|---|---|---|
+| `POST /api/hosted-workspace/local-conversations` | `authorize`, `projects`, `threads`, `workspace`, `save-workspace` | `{projects[], threads[], nextOffset}`, `{ok}`, `{workspace}` |
+| `POST /api/hosted-workspace/status` | — (`trigger: project-selection`, `automatic-retry`) | `{accountId, deviceId, enabled, projectSetupCompleted, connections[], localProjects[]}` |
+| `POST /api/hosted-workspace/runtime` | — | `{choices:[cloud, local], location, workspace:{projectName, projectPath, directory, branch, worktree}, supportsOpener, supportsWorktreeTitle, supportsWorktreeSourceBranch}` |
+| `POST /api/hosted-workspace/browser` | `action.action: status` | `{contexts[]}` each with `{projectId, threadId, tabs[], history[], profiles[], activeTabId, defaults:{colorScheme, profileId, zoom, viewport}}` |
+| `POST /api/hosted-workspace/git` | `changes`, `summary` (+ `scope: all`, `live`) | `{branch, files[], totals:{adds, dels, files}, scope}` |
+| `POST /api/hosted-workspace/tasks` | `list` | `{error}` here — needs a reconnected folder |
+| `POST /api/hosted-workspace/elevations` | — | `[]` |
+| `POST /api/hosted-workspace/native-agents` | `status` | `{agents[]:{harness, installed, connected, signedIn, canInstall, needsUpdate, models[]:{id, label, tagline, efforts[]}}}` |
+| `POST /api/hosted-workspace/appearance` | — | `{installationId, preferences:{selectedPreset, customPresets[]}}` |
+| `POST /api/hosted-workspace/profile-notice` | — | `{notice}` |
+| `POST /api/hosted-workspace/sites-context` | — | `{error}` when the folder is not reconnected |
+
+A thread record, which is what the sidebar renders and what this port's fixtures imitate:
+
+```json
+{"id": "<uuid>", "title": "…", "draft": false, "activeAt": 1791322132776,
+ "running": false, "archived": true, "canContinue": true,
+ "harness": "codebuff", "mode": "build"}
+```
+
+`harness` is one of `codebuff`, `claude-code`, `codex` — the thread remembers which agent runs it,
+and `mode` is `build` (the app's Code/Chat switch is a different thing: it is the
+`mode` of the *composer*, and `build` is what the recorded threads carry).
+
+**409 is a state, not a failure.** Any resource operation that needs a local folder answers
+`409 {"error": "Reconnect this local folder to use its tools"}` when the workspace connection is
+not up. The renderer draws that string; it is not a toast-worthy error.
+
+**What is still not recorded:** the chat message stream and the transcript shape. Both need a
+thread opened *and* a turn run, and the point of this boot was the surface around them. The
+recorder logs streaming responses as metadata only (`text/event-stream` bodies are skipped on
+purpose), so the tool will need a body-tap for that, and a signed-in turn is the user's call.
+
+Also learned the hard way, and worth writing down because it changes how the app can be observed:
+`app/electron/debug-switches.cjs` refuses to start a packaged build if `--remote-debugging-port`,
+`-pipe` or `-address` appears in argv (case-folded, and `/`-spelled on Windows), because such a
+switch would let any process running as the user drive the signed-in app. A DevTools endpoint is
+therefore not available on the installed app; the orchestrator preload is. The shell exits before
+its first log line when handed one of those flags.
