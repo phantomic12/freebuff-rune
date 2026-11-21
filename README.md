@@ -166,8 +166,13 @@ signed-in session it can contain conversation content.
 
 That is not theoretical: one signed-in boot (83 exchanges) is written up in
 `docs/port-notes.md` §8 — the whole `/api/hosted-workspace/*` surface, its `operation` style, the
-thread record the sidebar draws, and why a `409` there is a state rather than a failure. The
-message stream is the one piece still missing, and it needs a turn run.
+thread record the sidebar draws, and why a `409` there is a state rather than a failure.
+
+§9 goes further, with a real transcript in hand: reading one is a paginated pull
+(`operation: "read"` with `before`/`after` cursors), a message is a list of parts — text,
+reasoning, tool calls, and ads — and the page the person is looking at is a **remote web app** the
+shell loads from `freebuff.com`, with loopback as its capability bridge. That is the shape of the
+work a native UI would really take on.
 
 ## The orchestrator, brought back
 

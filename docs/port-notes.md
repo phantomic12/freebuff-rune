@@ -233,10 +233,12 @@ and `mode` is `build` (the app's Code/Chat switch is a different thing: it is th
 `409 {"error": "Reconnect this local folder to use its tools"}` when the workspace connection is
 not up. The renderer draws that string; it is not a toast-worthy error.
 
-**What is still not recorded:** the chat message stream and the transcript shape. Both need a
-thread opened *and* a turn run, and the point of this boot was the surface around them. The
-recorder logs streaming responses as metadata only (`text/event-stream` bodies are skipped on
-purpose), so the tool will need a body-tap for that, and a signed-in turn is the user's call.
+**What is still not recorded:** the live turn stream — see §9, which reads a real transcript and
+explains why a turn never crosses loopback at all. The recorder now taps streams rather than
+skipping them (SSE frames by `event:`/`data:`, newline-delimited JSON by line, since that is what
+`localStream` in `main.cjs` returns), bounded by `FREEBUFF_RECORD_STREAM_FRAMES`, but on this app
+the tap has nothing to catch: the streams that exist are the Publish progress and the hosted page's
+own network, and only the first is local.
 
 Also learned the hard way, and worth writing down because it changes how the app can be observed:
 `app/electron/debug-switches.cjs` refuses to start a packaged build if `--remote-debugging-port`,
@@ -244,3 +246,97 @@ Also learned the hard way, and worth writing down because it changes how the app
 switch would let any process running as the user drive the signed-in app. A DevTools endpoint is
 therefore not available on the installed app; the orchestrator preload is. The shell exits before
 its first log line when handed one of those flags.
+
+## 9. Reading a transcript, and where the turn actually happens
+
+The gap §8 left open — the message stream — turned out not to be a gap in the recorder. It is not
+on loopback at all, and finding that out is worth more than the stream would have been.
+
+### The window is a remote web app
+
+`hosted-workspace.cjs` opens the workspace with `POST /api/hosted-workspace/bootstrap {launchId}`
+and loads whatever `bootstrap.url` says, in a session partition keyed by `bootstrap.accountId`,
+carrying `bootstrap.sessionToken`. The accepted origins are
+`staging-2-auth.freebuffweb.site`, `staging-auth.freebuff.com` and `freebuff.com`. The bundled
+`resources/orchestrator/ui/` is not that page: it is the splash and the sign-in page, and it calls
+exactly six endpoints (`/api/auth/*`, `/api/diagnostics/renderer-boot`, `/api/telemetry/funnel`).
+
+So the local orchestrator is a **capability bridge** for a page that lives on the vendor's origin:
+browser panes, git, files, terminal, elevations, local history. The page cannot call it directly —
+every call goes through an `ipcMain.handle` in the main process, which is where the
+`x-freebuff-launch-id` header is added and where the per-operation argument whitelist lives
+(`hosted-local-conversations.cjs` re-checks it: an operation it does not know, or an extra field,
+is a thrown error).
+
+**What that means for a native shell**, and it is the honest answer to the issue's question: a port
+cannot stop at re-implementing loopback. The thing the person is looking at is a web app on
+`freebuff.com`, so a native UI has to be a *client of the cloud API* — the product-shaped decision,
+not a rendering exercise. Loopback is the small, well-specified half.
+
+### The transcript is a pull, not a subscription
+
+`POST /api/hosted-workspace/local-conversations` has these operations, from
+`hosted-local-conversations.cjs`'s `fields` table (each with its exact allowed arguments):
+
+| operation | arguments |
+|---|---|
+| `authorize` | — (once per window, before any other operation) |
+| `projects` | `offset` |
+| `threads` | `projectId`, `offset` |
+| `workspace` | — |
+| `save-workspace` | `tabs`, `activeId` |
+| `search` | `projectId`, `query` |
+| `read` | `projectId`, `threadId`, `before`, `after` |
+| `migrate` | `projectId`, `threadId`, `priority`, `retry` |
+| `attachment` | `projectId`, `threadId`, `attachmentId` |
+
+`read`, recorded against a real thread, answers with the whole conversation window:
+
+```json
+{
+  "thread": {"id","title","activeAt","running","archived","canContinue","harness","mode"},
+  "history": {"firstSeq","lastSeq","totalMessages","messageOffset","userOffset",
+              "loadedBytes","hasOlder","hasNewer"},
+  "messages": [
+    {"seq": 42, "role": "user" | "assistant", "inputId": "…",
+     "parts": [{"id","kind": "text" | "reasoning" | "tool" | "ad", …}]}
+  ],
+  "models": {"model","effort","harness","cliModels":[],
+             "catalog": {"version","protocol","issuedAt","refreshAt","fetchId",
+                         "fallbackKey","recommendedKey","hideModelPicker","plansUrl",
+                         "showAllModels": {"default"},
+                         "sections": [{"id","label","tooltip"}],
+                         "rows": [{"key","handle","displayName","tagline","contextWindow",
+                                   "efforts","defaultEffort","reasoningEffort","premium",
+                                   "access","multimodal","dataUse","badges","legacyDigests",
+                                   "placement","compaction","lockedLabel","opensAt","peakPills"}]}},
+  "runtime": {"choices","location","locked"},
+  "queued": [], "questions": [], "elevations": []
+}
+```
+
+Three things in there are worth naming:
+
+- **`before` / `after` are cursors, not offsets.** The reply says which way more history lies
+  (`hasOlder`, `hasNewer`) and how much it loaded (`loadedBytes`), so a client pages by sequence
+  number and never asks for the whole thread.
+- **A message is parts, not text.** `kind: "tool"` carries `toolName` plus the raw tool `input`
+  (for a shell tool: `command`, `process_type`, `timeout_seconds`); `kind: "reasoning"` is the
+  visible thinking; `kind: "text"` is the prose. A transcript renderer that assumes a string per
+  message cannot draw this UI.
+- **`kind: "ad"` is a part too.** Twelve of them came back in one thread, each
+  `{ad: {title, adText, cta, url, favicon, clickUrl, impUrl, placementId}}`. The ads ship inside
+  the transcript as an ordinary part — which settles the question of whether a port should offer a
+  switch: upstream has no toggle to mirror, because the creative is content.
+
+`queued`, `questions` and `elevations` are the three queues the window draws beside the transcript:
+a message waiting to be sent, a question the agent asked, and an approval request. All empty here.
+
+### So what is still unrecorded
+
+The live token stream of a running turn — and it cannot be recorded from this side, because the
+turn is between the hosted page and `freebuff.com`. The recorder sees no `text/event-stream` on
+loopback across 190 recorded exchanges, and that is the correct result rather than a shortcoming:
+loopback never carries a turn. What loopback does carry is what the shell contributes to one:
+`runtime` (where it will run), `prepare-chat` / `release-chat` (claims the folder for a thread),
+`files`, `git`, `browser` and `terminal` (the tools the agent asks the shell for).

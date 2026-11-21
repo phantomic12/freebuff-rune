@@ -13,8 +13,9 @@
 //
 // Caveats, stated rather than hidden:
 //   * GET request bodies are not read (they are almost always absent, and reading them is costly).
-//   * Streaming responses (SSE: text/event-stream) are logged as metadata only; cloning a stream to
-//     read it would consume it and break the app's live channel.
+//   * Streaming responses are tapped rather than skipped: the body is re-emitted to the app
+//     unchanged while a copy of each frame (SSE `event:`/`data:` or newline-delimited JSON, which is
+//     what localStream() uses) is recorded, bounded by FREEBUFF_RECORD_STREAM_FRAMES.
 //   * Uploads (POST with a file) have their body length recorded, not their bytes.
 //   * The file grows to FREEBUFF_RECORD_MAX bytes and then stops; keep it bounded.
 //   * This records loopback traffic of the desktop app. It is a diagnostics tool, not a toy: delete
@@ -28,7 +29,10 @@ const CLEANED = /^(authorization|cookie|x-freebuff-launch-id|set-cookie)$/i;
 // A body whose keys or values look like credentials is recorded as a shape, never as content.
 const SECRET_VALUE = /(token|secret|bearer|password|cookie)/i;
 // Long strings in an otherwise-fine body are truncated: an id is a shape, its full value is not.
-const LONG_STRING = 48;
+const LONG_STRING = Number(process.env.FREEBUFF_RECORD_LONG ?? 48);
+// Streaming bodies are unbounded in principle, so a stream records at most this many frames and
+// then keeps flowing to the app untouched.
+const MAX_FRAMES = Number(process.env.FREEBUFF_RECORD_STREAM_FRAMES ?? 400);
 
 let bytes = safeBytes();
 let lines = 0;
@@ -130,6 +134,79 @@ function record(req, res, t0, reqBody, resText) {
   });
 }
 
+// Read a streamed body without changing it: each chunk goes to the app first, then a copy is
+// buffered and cut into frames. SSE frames end at a blank line; newline-delimited JSON at a newline.
+function tapStream(res, label, path) {
+  const state = { buffer: "", frames: [], sent: 0, note: null };
+  const flush = () => {
+    if (state.note || state.frames.length === 0) return;
+    emit({ ts: Date.now(), path, stream: label, status: res.status, frames: state.frames });
+    state.frames = [];
+  };
+  const decoder = new TextDecoder();
+  const sse = /text\/event-stream/i.test(res.headers?.get?.("content-type") ?? "");
+  const sep = sse ? "\n\n" : "\n";
+  const tap = new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+      if (state.note) return;
+      let text;
+      try {
+        text = decoder.decode(chunk, { stream: true });
+      } catch {
+        return;
+      }
+      state.buffer += text;
+      for (;;) {
+        const at = state.buffer.indexOf(sep);
+        if (at < 0) break;
+        const frame = state.buffer.slice(0, at);
+        state.buffer = state.buffer.slice(at + sep.length);
+        if (!frame.trim()) continue;
+        state.frames.push(frameShape(frame, sse));
+        if (++state.sent > MAX_FRAMES) {
+          state.note = `stream stopped after ${MAX_FRAMES} frames`;
+          emit({ ts: Date.now(), path, stream: label, note: state.note });
+          state.frames = [];
+          return;
+        }
+        if (state.frames.length >= 40) flush();
+      }
+      if (state.buffer.length > 64 * 1024) {
+        state.frames.push({ kind: "unterminated", bytes: state.buffer.length });
+        state.buffer = "";
+      }
+    },
+    flush() {
+      if (state.buffer.trim()) state.frames.push(frameShape(state.buffer, sse));
+      flush();
+    },
+  });
+  return new Response(res.body.pipeThrough(tap), res);
+}
+
+function frameShape(frame, sse) {
+  if (sse) {
+    const event = /^event:\s*(.+)$/m.exec(frame)?.[1] ?? null;
+    const data = /^data:\s*([\s\S]*)$/m.exec(frame)?.[1] ?? "";
+    return { event, data: dataShape(data) };
+  }
+  return { data: dataShape(frame) };
+}
+
+function dataShape(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return { kind: "json", value: shorten(JSON.parse(trimmed)) };
+    } catch {
+      return { kind: "json-unparsed", bytes: trimmed.length, head: trimmed.slice(0, 240) };
+    }
+  }
+  return { kind: "text", bytes: trimmed.length, head: trimmed.slice(0, 240) };
+}
+
 const serve = Bun.serve;
 Bun.serve = (options) => {
   const inner = options?.fetch;
@@ -152,8 +229,16 @@ Bun.serve = (options) => {
         throw err;
       }
       const contentType = res.headers?.get?.("content-type") ?? "";
+      // A stream must not be cloned and awaited: that would hold the app's body until the stream
+      // ends, which for a live run is never. Hand the tap back immediately instead.
+      const streamed =
+        /text\/event-stream/i.test(contentType) || contentType.includes("application/x-ndjson");
+      if (streamed && res.body !== null) {
+        record(req, res, t0, reqBody, null);
+        return tapStream(res, contentType.includes("ndjson") ? "ndjson" : "sse", new URL(req.url).pathname);
+      }
       let resText = null;
-      if (!contentType.includes("text/event-stream") && res.body !== null) {
+      if (res.body !== null) {
         try {
           // A clone tees the body, so the app still receives all of it.
           resText = await res.clone().text();
