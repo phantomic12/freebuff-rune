@@ -461,5 +461,10 @@ there, and both are in the client now:
   one. `threads` therefore retries with the cloud id before calling a project empty, and archived
   threads are left out of the sidebar, as upstream leaves them out.
 
+The token reaches the orchestrator the way it reaches Electron's child: in its environment. Any
+process running as the same user can read a child's starting environment, and this design inherits
+that property rather than improving on it — the alternative (a pipe or a handshake) is a change
+upstream would have to make.
+
 What this does *not* change is §10's other conclusion: sending a turn is still the hosted page's
 `POST` to the cloud. Reading is now genuinely native, on the real account.
