@@ -313,6 +313,21 @@ fn the_shell_boots_the_real_orchestrator() {
         );
     }
     let _ = endpoint.snapshot();
+
+    // The operation's own shape, checked against the server's whitelist: an unknown operation or
+    // an undeclared field is thrown by `hosted-local-conversations.cjs`, while a signed-out profile
+    // can only say it is unauthorized. Anything else means the call was shaped wrong.
+    let shaped = endpoint.rpc(
+        "local-conversations",
+        &serde_json::json!({"operation": "projects", "accountId": "acct", "offset": 0}),
+    );
+    eprintln!("freebuff-rune: projects answered {shaped:?}");
+    if let Err(why) = &shaped {
+        let lowered = why.to_ascii_lowercase();
+        for wrong in ["unknown operation", "unexpected field", "invalid operation"] {
+            assert!(!lowered.contains(wrong), "the call was shaped wrong: {why}");
+        }
+    }
     if pid > 0 {
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/PID", &pid.to_string()])
