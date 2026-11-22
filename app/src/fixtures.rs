@@ -2,19 +2,45 @@
 //!
 //! These are *samples*, not anyone's data. The app's own screenshot showed real project and
 //! thread names; anything published has to use invented ones, so every name, title and body here
-//! is fictional. The shape is what matters: three projects with threads in each of the states the
-//! sidebar can draw, three empty ones, and one thread long enough to scroll.
+//! is fictional. The shape is what matters, and the shape is the recorded one: three projects with
+//! threads in each of the states the sidebar can draw, three empty ones, and one thread long
+//! enough to scroll — its messages carrying the four part kinds a real transcript carries.
 
-use crate::model::{Act, Item, Project, Status, Thread};
+use crate::model::{Elevation, Message, Part, Project, Role, Status, Thread};
 
-fn t(title: &str, status: Status, context: f32, branch: Option<&str>, items: Vec<Item>) -> Thread {
+fn msg(seq: u64, role: Role, parts: Vec<Part>) -> Message {
+    Message { seq, role, parts }
+}
+
+fn t(
+    title: &str,
+    status: Status,
+    context: f32,
+    branch: Option<&str>,
+    messages: Vec<Message>,
+    elevations: Vec<Elevation>,
+) -> Thread {
+    let total_messages = messages.len() as u64;
     Thread {
         title: title.into(),
         status,
-        items,
+        messages,
+        elevations,
         context,
         branch: branch.map(Into::into),
         running: status == Status::Working || status == Status::NeedsYou,
+        total_messages,
+    }
+}
+
+fn text(body: &str) -> Part {
+    Part::Text(body.into())
+}
+
+fn tool(name: &str, input: &str) -> Part {
+    Part::Tool {
+        name: name.into(),
+        input: input.into(),
     }
 }
 
@@ -28,32 +54,58 @@ pub fn projects() -> Vec<Project> {
                 20.0,
                 Some("main"),
                 vec![
-                    Item::User(
-                        "can the upload path retry a dropped connection instead of failing the whole batch?"
-                            .into(),
+                    msg(
+                        1,
+                        Role::User,
+                        vec![text(
+                            "can the upload path retry a dropped connection instead of failing the whole batch?",
+                        )],
                     ),
-                    Item::Activity(Act::Read, "Read a file".into()),
-                    Item::Agent(
-                        "The client retries at the request level, but a batch upload drops the whole group when one part fails. Two options: retry each part with backoff, or checkpoint the batch and resume. The first is smaller."
-                            .into(),
+                    msg(
+                        2,
+                        Role::Assistant,
+                        vec![
+                            Part::Reasoning(
+                                "The client retries at the request level. A batch upload drops the whole group when one part fails, so the retry has to move inside the batch.".into(),
+                            ),
+                            tool("read_file", "src/upload/batch.ts"),
+                            text(
+                                "The client retries at the request level, but a batch upload drops the whole group when one part fails. Two options: retry each part with backoff, or checkpoint the batch and resume. The first is smaller.",
+                            ),
+                        ],
                     ),
-                    Item::Activity(Act::Run, "Ran a tool, ran a command".into()),
-                    Item::Activity(Act::Read, "Read a file".into()),
-                    Item::Agent(
-                        "The retry helper already carries exponential backoff and jitter, so this is a call site change rather than new machinery. Writing the test first, then the change."
-                            .into(),
+                    msg(
+                        3,
+                        Role::Assistant,
+                        vec![
+                            tool("shell", "npm test -- upload"),
+                            tool("read_file", "src/upload/retry.ts"),
+                            text(
+                                "The retry helper already carries exponential backoff and jitter, so this is a call site change rather than new machinery. Writing the test first, then the change.",
+                            ),
+                            Part::Ad {
+                                title: "Your ad could be here".into(),
+                                body: "Freebuff is ad-supported. In the app this card arrives as a part of the conversation, from the orchestrator.".into(),
+                                cta: "Learn more".into(),
+                            },
+                        ],
                     ),
-                    Item::Activity(Act::Edit, "Edited a file, ran a command".into()),
-                    Item::Agent(
-                        "One test still fails: the retry budget is spent before the last part ever attempts. Asking to raise the budget rather than widen it silently."
-                            .into(),
-                    ),
-                    Item::Approval(
-                        "Permission request".into(),
-                        "Raise the upload retry budget from 3 to 5 attempts and re-run the failing test."
-                            .into(),
+                    msg(
+                        4,
+                        Role::Assistant,
+                        vec![
+                            tool("edit_file", "src/upload/batch.ts"),
+                            text(
+                                "One test still fails: the retry budget is spent before the last part ever attempts. Asking to raise the budget rather than widen it silently.",
+                            ),
+                        ],
                     ),
                 ],
+                vec![Elevation {
+                    title: "Permission request".into(),
+                    body: "Raise the upload retry budget from 3 to 5 attempts and re-run the failing test."
+                        .into(),
+                }],
             )],
         },
         Project {
@@ -65,35 +117,69 @@ pub fn projects() -> Vec<Project> {
                     41.0,
                     Some("dev"),
                     vec![
-                        Item::User("work through the pending TODOs in the repo".into()),
-                        Item::Activity(Act::Search, "Searched 214 files".into()),
-                        Item::Agent(
-                            "Nine TODOs are real work and four are notes to self. Starting with the scheduler's unimplemented preemption branch."
-                                .into(),
+                        msg(1, Role::User, vec![text("work through the pending TODOs in the repo")]),
+                        msg(
+                            2,
+                            Role::Assistant,
+                            vec![
+                                tool("search", "TODO --glob '*.rs'"),
+                                text(
+                                    "Nine TODOs are real work and four are notes to self. Starting with the scheduler's unimplemented preemption branch.",
+                                ),
+                            ],
                         ),
                     ],
+                    Vec::new(),
                 ),
-                t("New chat", Status::Idle, 0.0, None, vec![]),
+                t("New chat", Status::Idle, 0.0, None, vec![], Vec::new()),
             ],
         },
         Project {
             name: "orbit-api".into(),
             threads: vec![
-                t("Test PR on sync branch", Status::Done, 62.0, Some("test/sync"), vec![]),
-                t("New chat", Status::Idle, 0.0, None, vec![]),
+                t(
+                    "Test PR on sync branch",
+                    Status::Done,
+                    62.0,
+                    Some("test/sync"),
+                    vec![],
+                    Vec::new(),
+                ),
+                t("New chat", Status::Idle, 0.0, None, vec![], Vec::new()),
             ],
         },
         Project {
             name: "ledger-go".into(),
-            threads: vec![t("Port the router to Go", Status::Failed, 12.0, Some("main"), vec![])],
+            threads: vec![t(
+                "Port the router to Go",
+                Status::Failed,
+                12.0,
+                Some("main"),
+                vec![],
+                Vec::new(),
+            )],
         },
         Project {
             name: "clockwork".into(),
-            threads: vec![t("Token budget discovery", Status::Done, 8.0, None, vec![])],
+            threads: vec![t(
+                "Token budget discovery",
+                Status::Done,
+                8.0,
+                None,
+                vec![],
+                Vec::new(),
+            )],
         },
         Project {
             name: "mesh-net".into(),
-            threads: vec![t("Distributed inference notes", Status::Idle, 4.0, None, vec![])],
+            threads: vec![t(
+                "Distributed inference notes",
+                Status::Idle,
+                4.0,
+                None,
+                vec![],
+                Vec::new(),
+            )],
         },
         Project {
             name: "pixel-lab".into(),

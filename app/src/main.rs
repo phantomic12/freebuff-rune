@@ -38,7 +38,9 @@ fn main() {
                 s.projects[6].threads.push(model::Thread {
                     title: "New chat".into(),
                     status: model::Status::Idle,
-                    items: Vec::new(),
+                    messages: Vec::new(),
+                    elevations: Vec::new(),
+                    total_messages: 0,
                     context: 0.0,
                     branch: None,
                     running: false,

@@ -151,6 +151,8 @@ hold conversation content, which is why the shapes in §8 are written with the v
 | launch token on every call | `request(... launch_id)` → `x-freebuff-launch-id` |
 | profile + overrides | `Config::discover`, `state_path` |
 | live status in the UI | `Live` → sidebar footer (`ui/sidebar.rs`) |
+| transcript as parts | `Part`, `Message`, `Thread::read` (`app/src/model.rs`) ← §9 |
+| cursor paging window | `Thread::history` → `ui/transcript.rs` (`load-earlier` row) |
 
 Verified: real boot to `/healthz`, signed-out detection via `/api/auth/status`, orchestrator
 exits ≤2 s after the shell is killed, profile-lock failure surfaced with its stderr line.

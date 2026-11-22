@@ -53,6 +53,12 @@ Rendered by `scripts/shot.sh` at 2x the 1440 × 900 window — the real layout, 
 |---|---|
 | ![empty](docs/screenshots/empty.png) | ![settings](docs/screenshots/settings.png) |
 
+A transcript as the real one is shaped — parts in the flow: prose, folded thinking, tool rows
+carrying the tool's name and its argument, and the sponsored card that arrives as a *part*, not a
+separate slot:
+
+![parts](docs/screenshots/transcript-parts.png)
+
 The sidebar footer with the real orchestrator behind it — spawned from the installed app, booted
 through nine phases, then queried for its auth state:
 
@@ -218,6 +224,9 @@ closer to ten).
   buttons, the Code/Chat switch, panel toggles, and Rune's Windows caption buttons over the
   trailing edge.
 - Sidebar selection switching threads, each with its own transcript and context percentage.
+- A transcript in the shape the orchestrator actually returns: messages of parts (`text`,
+  `reasoning`, `tool` with its name and input, and `ad`), paged by the `before`/`after` cursors a
+  `read` call takes, with `history` telling the shell which way more of the thread lies.
 - A real text composer: Rune's edit model, caret, selection, paste, backspace, Enter to submit,
   placeholder, growing height, and a send button that enables only with text.
 - Settings sheet: light/dark switch that re-tokenises the whole shell live, plus the shell rows.
@@ -229,10 +238,10 @@ closer to ten).
 - Accessibility roles/labels on the shell, tabs, panel, composer field and backend status.
 
 Tests cover: pane geometry, tab press → thread switch, sidebar open → new tab, panel toggle,
-typing/backspace/Enter through the edit model, the menu chords reaching the app with the composer
-focused, window-size round-trip and rejection, every button carrying a name, the boot-line
-parsers on their ugly cases, plain and chunked HTTP replies, the footer's five states, and
-(gated) a real orchestrator boot.
+typing/backspace/Enter through the edit model, transcript paging by cursor and every part kind
+reaching the screen, the menu chords reaching the app with the composer focused, window-size
+round-trip and rejection, every button carrying a name, the boot-line parsers on their ugly cases,
+plain and chunked HTTP replies, the footer's five states, and (gated) a real orchestrator boot.
 
 ## Repository layout
 

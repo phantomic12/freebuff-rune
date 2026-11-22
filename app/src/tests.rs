@@ -63,7 +63,7 @@ fn a_press_on_an_open_tab_switches_threads() {
 #[test]
 fn the_composer_edits_and_submits_real_text() {
     let mut rt = runtime(State::seed());
-    let before = rt.state.thread().items.len();
+    let before = rt.state.thread().messages.len();
 
     tap(&mut rt, "composer-field");
     rt.paste("ship the native shell");
@@ -90,9 +90,17 @@ fn the_composer_edits_and_submits_real_text() {
 
     assert_eq!(rt.state.draft.text, "", "Enter clears the field");
     assert_eq!(
-        rt.state.thread().items.len(),
-        before + 3,
-        "the message, a tool row and the agent's reply"
+        rt.state.thread().messages.len(),
+        before + 2,
+        "the person's message and the agent's reply"
+    );
+    let last = rt.state.thread().messages.last().expect("reply");
+    assert_eq!(last.role, crate::model::Role::Assistant);
+    assert!(
+        last.parts
+            .iter()
+            .any(|p| matches!(p, crate::model::Part::Reasoning(_))),
+        "the reply carries a reasoning part, as a real one does"
     );
 }
 
@@ -443,4 +451,75 @@ fn the_menu_chords_reach_the_app_with_the_composer_focused() {
     rt.key(chord(',', false));
     rt.frame(1.0 / 60.0);
     assert!(!rt.state.settings_open, "and closes them again");
+}
+
+#[test]
+fn the_transcript_is_parts_and_pages_by_cursor() {
+    use crate::model::{Part, Role};
+
+    let s = State::seed();
+    let thread = &s.projects[0].threads[0];
+
+    // Four messages, and every part kind the recorded payload carries appears in them.
+    assert_eq!(thread.messages.len(), 4);
+    let kinds: Vec<&str> = thread
+        .messages
+        .iter()
+        .flat_map(|m| m.parts.iter())
+        .map(|p| match p {
+            Part::Text(_) => "text",
+            Part::Reasoning(_) => "reasoning",
+            Part::Tool { .. } => "tool",
+            Part::Ad { .. } => "ad",
+        })
+        .collect();
+    for kind in ["text", "reasoning", "tool", "ad"] {
+        assert!(kinds.contains(&kind), "no {kind} part in the seed thread");
+    }
+    assert_eq!(thread.messages[0].role, Role::User);
+
+    // `history` is what a `read` reports, and it says which way more lies.
+    let h = thread.history();
+    assert_eq!((h.first_seq, h.last_seq, h.total), (1, 4, 4));
+    assert!(!h.has_older && !h.has_newer, "the whole thread is loaded");
+
+    // Paging by cursor: the messages after `after`, at most `limit` of them.
+    let seqs = |after: u64, limit: usize| -> Vec<u64> {
+        thread.read(after, limit).iter().map(|m| m.seq).collect()
+    };
+    assert_eq!(seqs(0, 2), vec![1, 2]);
+    assert_eq!(seqs(2, 2), vec![3, 4]);
+    assert_eq!(
+        seqs(4, 2),
+        Vec::<u64>::new(),
+        "nothing after the last message"
+    );
+    assert_eq!(seqs(0, 0), Vec::<u64>::new(), "a zero window loads nothing");
+
+    // A window that starts mid-thread is the case the real payload describes with `hasOlder`.
+    let mut partial = State::seed();
+    let t = &mut partial.projects[0].threads[0];
+    t.messages.drain(..2);
+    t.total_messages = 9;
+    let h = t.history();
+    assert_eq!((h.first_seq, h.last_seq, h.total), (3, 4, 9));
+    assert!(h.has_older, "the thread holds messages before this window");
+    assert!(h.has_newer, "and after it");
+}
+
+#[test]
+fn every_part_kind_reaches_the_screen() {
+    let rt = runtime(State::seed());
+    // The four kinds, each found by the key its renderer sets.
+    assert!(rt.find("msg-1").is_some(), "the person's message");
+    assert!(rt.find("reasoning-2-0").is_some(), "folded thinking");
+    assert!(rt.find("tool-3-0").is_some(), "a tool row");
+    assert!(
+        rt.find("ad-3-3").is_some(),
+        "the sponsored part in the flow"
+    );
+    assert!(
+        rt.find("elevation").is_some(),
+        "the request holding the thread open"
+    );
 }

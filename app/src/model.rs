@@ -20,7 +20,7 @@ pub enum Status {
     Failed,
 }
 
-/// Which tool an activity row names, so it can draw the matching mark.
+/// Which mark a tool row draws, derived from the tool's name.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Act {
     Read,
@@ -30,26 +30,123 @@ pub enum Act {
     Think,
 }
 
-/// One turn in a transcript.
-pub enum Item {
-    /// The person's message: a bubble, right-aligned.
-    User(String),
-    /// The agent's prose: plain text at the transcript's own measure.
-    Agent(String),
-    /// A collapsed tool row: `Read a file`, `Ran a command`.
-    Activity(Act, String),
-    /// A request that stops the thread until it is answered.
-    Approval(String, String),
+impl Act {
+    /// `shell`/`run` draw a terminal, `read_file` a list, and so on. The recorded `toolName`s are
+    /// the agent's own (`shell`, `read_file`, …), so the row reads like the tool instead of a
+    /// generic one.
+    pub fn of(tool: &str) -> Act {
+        let t = tool.to_ascii_lowercase();
+        if t.contains("shell")
+            || t.contains("run")
+            || t.contains("command")
+            || t.contains("terminal")
+        {
+            Act::Run
+        } else if t.contains("edit")
+            || t.contains("write")
+            || t.contains("patch")
+            || t.contains("apply")
+        {
+            Act::Edit
+        } else if t.contains("search") || t.contains("grep") || t.contains("find") {
+            Act::Search
+        } else if t.contains("think") || t.contains("reason") || t.contains("plan") {
+            Act::Think
+        } else {
+            Act::Read
+        }
+    }
+}
+
+/// Who a message is from: `messages[].role` in the recorded payload.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Role {
+    User,
+    Assistant,
+}
+
+/// One piece of a message. The transcript is parts, not text — the recorded `parts[].kind` is
+/// exactly this set, and a renderer that assumes one string per message cannot draw the real UI.
+pub enum Part {
+    /// Prose.
+    Text(String),
+    /// Visible thinking. The app folds it to a row until it is opened (`open` in the payload).
+    Reasoning(String),
+    /// A tool call: the tool's name and the input it was given, one line.
+    Tool { name: String, input: String },
+    /// A sponsored card carried *inside* the flow, as the recorded `kind: "ad"` part is. The real
+    /// one adds `favicon`, `clickUrl`, `impUrl` and `placementId`; this port draws the visible four.
+    Ad {
+        title: String,
+        body: String,
+        cta: String,
+    },
+}
+
+pub struct Message {
+    /// Position in the thread, the value the `before`/`after` cursors page by.
+    pub seq: u64,
+    pub role: Role,
+    pub parts: Vec<Part>,
+}
+
+/// A request that stops the thread until it is answered. The real app keeps these in the
+/// `elevations` queue beside the messages, not inside them.
+pub struct Elevation {
+    pub title: String,
+    pub body: String,
+}
+
+/// The pagination block `local-conversations` answers `read` with, in its own terms.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct History {
+    pub first_seq: u64,
+    pub last_seq: u64,
+    pub total: u64,
+    pub has_older: bool,
+    pub has_newer: bool,
 }
 
 pub struct Thread {
     pub title: String,
     pub status: Status,
-    pub items: Vec<Item>,
+    pub messages: Vec<Message>,
+    pub elevations: Vec<Elevation>,
     /// The share of the context window in use, for the Overview panel.
     pub context: f32,
     pub branch: Option<String>,
     pub running: bool,
+    /// What the thread holds beyond what is loaded — the `totalMessages` of `history`, which can
+    /// exceed `messages.len()` exactly as it can in the real payload.
+    pub total_messages: u64,
+}
+
+impl Thread {
+    /// What a `read` would report about this window.
+    pub fn history(&self) -> History {
+        let first_seq = self.messages.first().map_or(0, |m| m.seq);
+        let last_seq = self.messages.last().map_or(0, |m| m.seq);
+        let total = self.total_messages.max(last_seq);
+        History {
+            first_seq,
+            last_seq,
+            total,
+            has_older: first_seq > 1,
+            has_newer: last_seq < total,
+        }
+    }
+
+    /// Page by cursor, as `operation: "read"` does: the messages after `after`, at most `limit` of
+    /// them. `after: 0` is the start of the thread.
+    pub fn read(&self, after: u64, limit: usize) -> &[Message] {
+        let start = self
+            .messages
+            .iter()
+            .position(|m| m.seq > after)
+            .unwrap_or(self.messages.len());
+        let end = (start + limit).min(self.messages.len());
+        &self.messages[start..end]
+    }
 }
 
 pub struct Project {
@@ -121,14 +218,28 @@ impl State {
         self.draft.clear();
         let (p, t) = self.active;
         let thread = &mut self.projects[p].threads[t];
-        thread.items.push(Item::User(text));
-        thread
-            .items
-            .push(Item::Activity(Act::Think, "Thinking".into()));
-        thread.items.push(Item::Agent(
-            "Working on it — the native shell now owns this turn instead of the Chromium renderer."
-                .into(),
-        ));
+        let mut seq = thread.messages.last().map_or(0, |m| m.seq);
+        // The person's turn, then the agent's: the same two messages the orchestrator would hand
+        // back on the next `read`.
+        seq += 1;
+        thread.messages.push(Message {
+            seq,
+            role: Role::User,
+            parts: vec![Part::Text(text)],
+        });
+        seq += 1;
+        thread.messages.push(Message {
+            seq,
+            role: Role::Assistant,
+            parts: vec![
+                Part::Reasoning("Reading the shell's state before answering.".into()),
+                Part::Text(
+                    "Working on it — the native shell now owns this turn instead of the Chromium renderer."
+                        .into(),
+                ),
+            ],
+        });
+        thread.total_messages = seq;
         thread.status = Status::Working;
         thread.running = true;
     }
