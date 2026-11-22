@@ -235,6 +235,12 @@ closer to ten).
   (`bootstrap` → `authorize` → `projects` → `threads`), and fetch a thread's transcript when it is
   opened (`local-conversations {operation:"read"}`), on a background thread so the window never
   waits on a socket. A signed-out boot says so and keeps the fixtures.
+- Serve the orchestrator's session vault itself (`app/src/vault.rs`, docs §11). The desktop login is
+  `safeStorage` ciphertext that the Electron main process used to decrypt over a loopback bridge;
+  this shell answers the same bridge and opens the ciphertext with DPAPI + Chromium's `os_crypt` key
+  from the app's `Local State`. On Windows that makes a launch with no Electron **signed in**: the
+  sidebar shows the account's real projects and threads and the transcript renders the real
+  conversation.
 - Scroll areas with stick-to-bottom on the transcript.
 - The Electron menu's keyboard shortcuts (Ctrl/⌘ + `,` `T` `Shift+T` `W` `Shift+W`), routed
   app-wide so they work while the composer has focus.
@@ -248,7 +254,9 @@ round-trip and rejection, every button carrying a name, the boot-line parsers on
 plain and chunked HTTP replies, the footer's five states, the hosted-workspace client against a
 fake loopback orchestrator (project/thread/transcript parsing, the launch header on every call, a
 snapshot landing in the sidebar and an opened thread asking for its transcript, an empty account
-still rendering), and (gated) a real orchestrator boot plus a real RPC call to it.
+still rendering, a first page that sends no cursor), the session vault's protocol (token, key
+namespace, absent entry, refused writes and refused approvals), and (gated) a real orchestrator boot
+plus a real RPC call to it.
 
 ## Repository layout
 
@@ -274,10 +282,10 @@ own projects, threads and transcripts out of it. What it still does not have:
   reasoned reply, but the turn itself is between the hosted page and `freebuff.com` (see
   `docs/port-notes.md` §9). Loopback has no write path for it, so a port that sends has to speak
   the cloud API — the product-shaped gap, not a rendering one.
-- The hosted browser and terminal panels, the updates flow, and the sign-in screen. Sign-in is not
-  something a second shell can inherit: the desktop session lives in a vault the orchestrator reads
-  from the Electron main process (`FREEBUFF_MCP_CONSENT_PORT` + token, `safeStorage`-encrypted), so
-  a non-Electron launch is signed out by construction — see `docs/port-notes.md` §10.
+- The hosted browser and terminal panels, the updates flow, and the sign-in screen. This shell reads
+  the session Electron last wrote (docs §11) but does not create one: on macOS and Linux the vault
+  refuses to exist rather than half-work, and `set`/`confirm` are answered "unavailable" instead of
+  pretending.
 - The `elevations`, `questions` and `queued` queues are parsed when the payload carries them but
   nothing answers them yet.
 - The fixtures are **invented sample content**, not anyone's projects, and they are what a

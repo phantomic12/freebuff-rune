@@ -401,17 +401,65 @@ account. Booting the shell next to the running Freebuff Desktop, on the *same* p
   `/api/auth/status` answers `{authed:false}`.
 
 The profile file itself holds no session (`authSessions` is empty in `state.json`), so patching the
-state path makes no difference — the token is in the vault, and the vault belongs to Electron.
-A native shell therefore has two paths to a signed-in window, both product work rather than
-rendering:
+state path makes no difference — the token is in the vault, and the vault belonged to Electron.
+A native shell had two ways forward, both product work rather than rendering: **be the vault**, or
+**sign in natively**. The first one is now implemented — see §11.
 
-1. **Be the vault.** Serve `/secret` and decrypt with Electron's own `safeStorage` format
-   (on Windows: DPAPI over the key in the app's `Local State`). The orchestrator would then accept
-   this shell exactly as it accepts Electron.
-2. **Sign in natively** and write the same file itself, so the orchestrator starts with a session it
-   can use.
+## 11. The vault, natively — and a shell that is signed in without Electron
 
-Until one of those exists, the honest state of this port is: supervision, boot contract, launch
-gate, transcript reading and rendering are real and tested against a fake orchestrator (§10 above);
-the account behind them is whatever Electron last left, and a shell that did not host the sign-in
-cannot have it.
+`app/src/vault.rs` is the bridge from §10, reimplemented: the same routes, the same bearer token, the
+same key namespace, with the ciphertext opened in-process. It is the one piece that turns "a second
+orchestrator is signed out by construction" into a shell that shows the account's real threads.
+
+### What it has to open
+
+`safeStorage` is not a black box on Windows — it is Chromium's os_crypt, and the format is:
+
+| Layer | Bytes |
+|---|---|
+| value in `state.json.auth-secrets.json` | base64 of `v10` + 12-byte nonce + AES-256-GCM ciphertext and tag |
+| the AES key | `os_crypt.encrypted_key` in the app's `Local State` (`%APPDATA%\Freebuff\Local State`) |
+| that key | base64 of `DPAPI` + a DPAPI blob, which decrypts to exactly 32 bytes |
+
+DPAPI is scoped to the *user*, not to the app, so a process running as the same person can open the
+key and then the session. On macOS the key lives in the keychain under the app's identity and on
+Linux it is a Chromium-derived key; rather than half-work, `Vault::start` returns `None` there and
+the launch is signed out exactly as before.
+
+### What it serves
+
+`FREEBUFF_MCP_CONSENT_PORT` and `FREEBUFF_MCP_CONSENT_TOKEN` are now set on the spawned orchestrator,
+pointing at this shell's own loopback listener:
+
+| Request | Answer |
+|---|---|
+| `GET /healthz` | `{ok:true}` |
+| `POST /secret` `{op:"get", key:"auth/<sha256>"}` | `{value}` — the session, or `null` when absent or unopenable |
+| `POST /secret` `{op:"set"\|"delete"}` | `{error:{kind:"unavailable"}}` — this shell reads the session, it does not sign in |
+| `POST /confirm` | `{error:{kind:"unavailable"}}` — a dialog this shell cannot show fails loudly, never hangs |
+| any other key namespace | `{error:{kind:"bad_request"}}` — a connector's token is not this shell's business |
+
+### Verified, not asserted
+
+Running the shell on the installed profile next to the app, with no Electron in the process tree:
+
+```
+freebuff-rune: auth vault listening on 127.0.0.1:59454 (session file …\freebuff-desktop\state.json.auth-secrets.json)
+freebuff-rune: backend Freebuff orchestrator ready on port 59409 as process 508, signed in
+freebuff-rune: synced the orchestrator's projects
+```
+
+The sidebar then lists the account's own projects and threads, and opening one fetches and renders the
+real transcript — pairing codes, tool rows, thoughts and all. Two things had to be learned live to get
+there, and both are in the client now:
+
+- **`after: 0` is rejected.** The `read` schema wants `after` to be a number `> 0`, so the first page
+  omits the cursor entirely (the server treats absent as "from the start"). Sending a zero is a
+  `too_small` validation error, not an empty page.
+- **Threads have two ids.** `projects` answers with a local `id` and a `cloudProjectId`, and a folder
+  that is not reconnected on this machine has threads under the cloud id and none under the local
+  one. `threads` therefore retries with the cloud id before calling a project empty, and archived
+  threads are left out of the sidebar, as upstream leaves them out.
+
+What this does *not* change is §10's other conclusion: sending a turn is still the hosted page's
+`POST` to the cloud. Reading is now genuinely native, on the real account.

@@ -14,3 +14,10 @@ hmac = "0.12"
 sha2 = "0.10"
 # The hosted-workspace calls are JSON in and JSON out; serde_json is already in the tree for Rune.
 serde_json = "1"
+aes-gcm = "0.10"
+# safeStorage is DPAPI on Windows; the vault opens the session file with it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+] }

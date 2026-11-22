@@ -790,3 +790,139 @@ fn an_account_with_nothing_in_it_still_renders() {
     // An empty thread draws the landing state, which is the one place a name is safe to read.
     assert!(rt.find("rail").is_some(), "the window still lays out");
 }
+
+/// One raw HTTP call to the vault, the way the orchestrator makes it.
+fn vault_call(port: u16, token: Option<&str>, path: &str, body: &str) -> serde_json::Value {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the vault listens");
+    let auth = token
+        .map(|t| format!("Authorization: Bearer {t}\r\n"))
+        .unwrap_or_default();
+    let req = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).unwrap();
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    serde_json::from_slice(&raw[split + 4..]).expect("a JSON body")
+}
+
+#[test]
+fn the_vault_answers_only_what_the_orchestrator_may_ask() {
+    let public = |value: &str| {
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".to_string() + value
+    };
+    let key = crate::vault::auth_key("https://www.codebuff.com");
+    let dir = std::env::temp_dir().join(format!("freebuff-rune-vault-{}", public("test")));
+    let _ = std::fs::create_dir_all(&dir);
+    let state = dir.join("state.json");
+    // A file with one entry that is not a real ciphertext: the vault must say "no session" rather
+    // than hand back bytes or fail the request.
+    std::fs::write(
+        crate::vault::secrets_path(&state),
+        format!(r#"{{"{key}":"v10AAAAAAAAAAAAAAAAAAAA"}}"#),
+    )
+    .unwrap();
+
+    let Some(vault) = crate::vault::Vault::start(state.clone()) else {
+        // No DPAPI key on this host (or no Windows): the vault refuses to exist, which is the
+        // designed answer — nothing is served that cannot be opened.
+        eprintln!("no local-state key on this host; the vault's protocol checks did not run");
+        return;
+    };
+
+    let anonymous = vault_call(
+        vault.port,
+        None,
+        "/secret",
+        r#"{"op":"get","key":"auth/x"}"#,
+    );
+    assert_eq!(anonymous["error"]["message"], "missing or invalid token");
+    let wrong = vault_call(vault.port, Some("not-the-token"), "/secret", "{}");
+    assert_eq!(wrong["error"]["message"], "missing or invalid token");
+
+    // The connector namespace is not this shell's business, and neither is any other name shape.
+    let mcp = vault_call(
+        vault.port,
+        Some(&vault.token),
+        "/secret",
+        r#"{"op":"get","key":"mcp/abcdef01/tokens"}"#,
+    );
+    assert_eq!(
+        mcp["error"]["message"],
+        "key is not in a namespace this shell serves"
+    );
+
+    // A readable key with unusable ciphertext is "no value", not an error.
+    let unreadable = vault_call(
+        vault.port,
+        Some(&vault.token),
+        "/secret",
+        &format!(r#"{{"op":"get","key":"{key}"}}"#),
+    );
+    assert_eq!(unreadable["value"], serde_json::Value::Null);
+
+    // Writing would mean being the place a sign-in is stored; this shell says so instead.
+    let write = vault_call(
+        vault.port,
+        Some(&vault.token),
+        "/secret",
+        &format!(r#"{{"op":"set","key":"{key}","value":"x"}}"#),
+    );
+    assert_eq!(write["error"]["kind"], "unavailable");
+
+    // An approval dialog this shell cannot show fails loudly rather than hanging the orchestrator.
+    let confirm = vault_call(
+        vault.port,
+        Some(&vault.token),
+        "/confirm",
+        r#"{"name":"x"}"#,
+    );
+    assert_eq!(confirm["error"]["kind"], "unavailable");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_session_key_is_the_host_hash_both_sides_use() {
+    // `auth/` + sha256 hex of the API host — the shape `AUTH_SECRET_KEY` accepts upstream.
+    let key = crate::vault::auth_key("https://www.codebuff.com");
+    assert!(key.starts_with("auth/"));
+    assert_eq!(key.len(), 5 + 64);
+    assert!(key[5..].chars().all(|c| c.is_ascii_hexdigit()));
+    assert_ne!(key, crate::vault::auth_key("https://freebuff.com"));
+}
+
+#[test]
+fn the_first_page_omits_the_cursor_the_schema_rejects() {
+    let fake = FakeOrchestrator::start(
+        r#"{"threads":[{"id":"thr-1","title":"one"}]}"#,
+        r#"{"thread":{"title":"one"},"history":{"lastSeq":1,"totalMessages":1},"messages":[],"elevations":[]}"#,
+    );
+    let endpoint = crate::remote::Endpoint {
+        port: fake.port,
+        launch: "launch-9".into(),
+    };
+    let _ = endpoint.read("acct-7", "proj-alpha", "thr-1", 0);
+    let _ = endpoint.read("acct-7", "proj-alpha", "thr-1", 12);
+
+    let reads: Vec<String> = fake
+        .seen()
+        .into_iter()
+        .filter(|(_, _, body)| body.contains(r#""operation":"read""#))
+        .map(|(_, _, body)| body)
+        .collect();
+    assert_eq!(reads.len(), 2);
+    assert!(
+        !reads[0].contains(r#""after""#),
+        "the first page sends no cursor, because `after: 0` fails the server's schema: {}",
+        reads[0]
+    );
+    assert!(
+        reads[1].contains(r#""after":12"#),
+        "a real cursor is sent: {}",
+        reads[1]
+    );
+}

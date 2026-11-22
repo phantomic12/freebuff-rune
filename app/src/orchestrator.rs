@@ -272,6 +272,13 @@ fn run<F: Fn(Live)>(cfg: Config, emit: F) {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The Electron main process answers the orchestrator's session-vault calls; a native shell has
+    // to answer them itself or the launch is signed out however good the profile is (docs §10).
+    let vault = crate::vault::Vault::start(cfg.state.clone());
+    if let Some(vault) = &vault {
+        cmd.env("FREEBUFF_MCP_CONSENT_PORT", vault.port.to_string())
+            .env("FREEBUFF_MCP_CONSENT_TOKEN", &vault.token);
+    }
     if let Some(wasm) = &cfg.wasm {
         cmd.env("CODEBUFF_WASM_DIR", wasm).env(
             "CODEBUFF_TREE_SITTER_WASM_PATH",
@@ -561,7 +568,7 @@ fn free_port() -> std::io::Result<u16> {
     Ok(port)
 }
 
-fn random_token() -> String {
+pub(crate) fn random_token() -> String {
     let mut bytes = [0u8; 32];
     if getrandom::fill(&mut bytes).is_err() {
         // A timestamp and pid still keep two launches apart; the handshake never crosses a trust

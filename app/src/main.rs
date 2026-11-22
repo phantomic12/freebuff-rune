@@ -15,6 +15,7 @@ mod remote;
 mod tests;
 mod tokens;
 mod ui;
+mod vault;
 mod window_state;
 
 use model::State;

@@ -23,6 +23,9 @@ pub struct Endpoint {
 pub struct RemoteProject {
     pub id: String,
     pub name: String,
+    /// The cloud's own id for the same project (`cloudProjectId`). A folder that is not reconnected
+    /// on this machine has threads under this id and none under the local one.
+    pub cloud_id: Option<String>,
 }
 
 /// One thread as `{operation: "threads"}` names it.
@@ -32,6 +35,8 @@ pub struct RemoteThread {
     pub title: String,
     pub running: bool,
     pub harness: String,
+    /// Upstream keeps archived threads out of the sidebar; they are history, not work.
+    pub archived: bool,
 }
 
 /// A transcript, ready to put on screen.
@@ -102,13 +107,27 @@ impl Endpoint {
             .collect())
     }
 
-    pub fn threads(&self, account: &str, project: &str) -> Result<Vec<RemoteThread>, String> {
-        let reply = self.local(json!({
-            "operation": "threads",
-            "accountId": account,
-            "projectId": project,
-            "offset": 0,
-        }))?;
+    pub fn threads(
+        &self,
+        account: &str,
+        project: &RemoteProject,
+    ) -> Result<Vec<RemoteThread>, String> {
+        // A local project id answers with the threads on this machine, which is empty when its
+        // folder is not reconnected; the cloud id is where the account's own threads live.
+        let reply = self.thread_page(account, &project.id)?;
+        let local = array(&reply, "threads").map(Vec::len).unwrap_or(0);
+        let reply = match &project.cloud_id {
+            Some(cloud) if local == 0 && *cloud != project.id => {
+                self.thread_page(account, cloud)?
+            }
+            _ => reply,
+        };
+        if std::env::var_os("FREEBUFF_DEBUG_SYNC").is_some() {
+            eprintln!(
+                "freebuff-rune: threads reply {}",
+                reply.to_string().chars().take(500).collect::<String>()
+            );
+        }
         Ok(array(&reply, "threads")
             .map(Vec::as_slice)
             .unwrap_or_default()
@@ -117,13 +136,23 @@ impl Endpoint {
             .collect())
     }
 
+    fn thread_page(&self, account: &str, project: &str) -> Result<Value, String> {
+        let reply = self.local(json!({
+            "operation": "threads",
+            "accountId": account,
+            "projectId": project,
+            "offset": 0,
+        }))?;
+        Ok(reply)
+    }
+
     /// The sidebar's whole data set: the account, then every project with its threads.
     pub fn snapshot(&self) -> Result<Snapshot, String> {
         let account = self.bootstrap()?;
         self.authorize(&account)?;
         let mut projects = Vec::new();
         for project in self.projects(&account)? {
-            let threads = self.threads(&account, &project.id).unwrap_or_default();
+            let threads = self.threads(&account, &project).unwrap_or_default();
             projects.push((project, threads));
         }
         Ok(Snapshot { account, projects })
@@ -137,13 +166,18 @@ impl Endpoint {
         thread: &str,
         after: u64,
     ) -> Result<Transcript, String> {
-        let reply = self.local(json!({
+        // `after` is `> 0` to the server's schema (`too_small`), so the first page omits the cursors
+        // instead of sending a zero: absent means "from the start", which is what 0 was meant to be.
+        let mut body = json!({
             "operation": "read",
             "accountId": account,
             "projectId": project,
             "threadId": thread,
-            "after": after,
-        }))?;
+        });
+        if after > 0 {
+            body["after"] = json!(after);
+        }
+        let reply = self.local(body)?;
         Transcript::parse(&reply).ok_or_else(|| "read sent an unreadable transcript".to_string())
     }
 }
@@ -153,6 +187,7 @@ impl RemoteProject {
         Some(RemoteProject {
             id: string(value, "id")?,
             name: string(value, "name").unwrap_or_else(|| "Untitled project".to_string()),
+            cloud_id: string(value, "cloudProjectId"),
         })
     }
 }
@@ -167,6 +202,10 @@ impl RemoteThread {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             harness: string(value, "harness").unwrap_or_default(),
+            archived: value
+                .get("archived")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         })
     }
 }

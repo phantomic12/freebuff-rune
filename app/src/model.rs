@@ -303,11 +303,12 @@ impl State {
         // placeholder, because every renderer indexes `projects[active]` rather than checking.
         self.projects = projects
             .iter()
-            .filter(|(_, threads)| !threads.is_empty())
+            .filter(|(_, threads)| threads.iter().any(|t| !t.archived))
             .map(|(project, threads)| Project {
                 name: project.name.clone(),
                 threads: threads
                     .iter()
+                    .filter(|thread| !thread.archived)
                     .map(|thread| crate::remote::thread_from(&project.id, thread))
                     .collect(),
             })
