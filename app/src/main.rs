@@ -10,6 +10,7 @@ mod fixtures;
 mod keys;
 mod model;
 mod orchestrator;
+mod remote;
 #[cfg(test)]
 mod tests;
 mod tokens;
@@ -29,6 +30,48 @@ fn shortcuts(s: &mut State, ev: &rune::KeyEvent, tx: &mut rune::Tx) -> bool {
     keys::handle(s, ev, tx)
 }
 
+/// Read the orchestrator's own data into the shell: the account, every project, its threads, and
+/// then a transcript each time the window asks for one. A background thread, because the window
+/// never waits on the network; the fixtures stay on screen until the first snapshot lands.
+fn spawn_sync(handle: rune::AppHandle<State>, port: u16, launch: String) {
+    let endpoint = remote::Endpoint { port, launch };
+    std::thread::spawn(move || {
+        let snapshot = match endpoint.snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(why) => {
+                // A signed-in boot that cannot list projects is worth one line, not a dialog.
+                eprintln!("freebuff-rune: sync failed: {why}");
+                return;
+            }
+        };
+        // The thread the shell puts on screen first is the one whose transcript it needs.
+        let first = snapshot.projects.first().and_then(|(project, threads)| {
+            threads.first().map(|thread| model::Want {
+                project: project.id.clone(),
+                thread: thread.id.clone(),
+            })
+        });
+        let (wants, asked) = std::sync::mpsc::channel::<model::Want>();
+        let ask = wants.clone();
+        let projects = snapshot.projects;
+        handle.update(move |s, _| s.apply_snapshot(projects, wants));
+        eprintln!("freebuff-rune: synced the orchestrator's projects");
+        if let Some(want) = first {
+            let _ = ask.send(want);
+        }
+
+        while let Ok(want) = asked.recv() {
+            match endpoint.read(&snapshot.account, &want.project, &want.thread, 0) {
+                Ok(transcript) => {
+                    let (project, thread) = (want.project, want.thread);
+                    handle.update(move |s, _| s.apply_transcript(&project, &thread, transcript));
+                }
+                Err(why) => eprintln!("freebuff-rune: read {}: {why}", want.thread),
+            }
+        }
+    });
+}
+
 fn main() {
     let spec = AppSpec::<State> {
         scenes: &[
@@ -41,6 +84,7 @@ fn main() {
                     messages: Vec::new(),
                     elevations: Vec::new(),
                     total_messages: 0,
+                    remote: None,
                     context: 0.0,
                     branch: None,
                     running: false,
@@ -52,6 +96,7 @@ fn main() {
                     port: 7781,
                     pid: 32704,
                     authed: true,
+                    launch: "snapshot".into(),
                 }
             }),
             ("panel-closed", |s: &mut State| s.panel_open = false),
@@ -104,7 +149,28 @@ fn main() {
             Some(cfg) => {
                 let handle = app.handle();
                 let (tx, rx) = std::sync::mpsc::channel();
+                let sync_handle = handle.clone();
                 orchestrator::launch(cfg, move |live| {
+                    // The boot says it is signed in: read the person's projects, then let the
+                    // window ask for a transcript as it opens threads.
+                    if let orchestrator::Live::Ready {
+                        authed,
+                        port,
+                        launch,
+                        ..
+                    } = &live
+                    {
+                        if *authed {
+                            spawn_sync(sync_handle.clone(), *port, launch.clone());
+                        } else {
+                            // No account, no remote data: the fixtures are what this shell can
+                            // show, and saying so once is better than an empty sidebar.
+                            eprintln!(
+                                "freebuff-rune: the orchestrator is signed out; showing the \
+                                 fixture thread"
+                            );
+                        }
+                    }
                     let settled = matches!(
                         live,
                         orchestrator::Live::Ready { .. } | orchestrator::Live::Failed(_)

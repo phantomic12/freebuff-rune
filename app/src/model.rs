@@ -67,6 +67,7 @@ pub enum Role {
 
 /// One piece of a message. The transcript is parts, not text — the recorded `parts[].kind` is
 /// exactly this set, and a renderer that assumes one string per message cannot draw the real UI.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Part {
     /// Prose.
     Text(String),
@@ -98,7 +99,7 @@ pub struct Elevation {
 }
 
 /// The pagination block `local-conversations` answers `read` with, in its own terms.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct History {
     pub first_seq: u64,
     pub last_seq: u64,
@@ -107,6 +108,15 @@ pub struct History {
     pub has_newer: bool,
 }
 
+/// Where a thread lives for the orchestrator: the ids a `read` call needs. `None` on the fixtures,
+/// which exist so the shell can be looked at without a signed-in profile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteRef {
+    pub project: String,
+    pub thread: String,
+}
+
+/// One thread as the orchestrator named it, kept beside the fixture-shaped fields.
 pub struct Thread {
     pub title: String,
     pub status: Status,
@@ -119,9 +129,40 @@ pub struct Thread {
     /// What the thread holds beyond what is loaded — the `totalMessages` of `history`, which can
     /// exceed `messages.len()` exactly as it can in the real payload.
     pub total_messages: u64,
+    /// Set when the thread came from the orchestrator; `open_thread` then asks for its transcript.
+    pub remote: Option<RemoteRef>,
+}
+
+/// A transcript the sync thread was asked for: which thread, by the orchestrator's ids.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Want {
+    pub project: String,
+    pub thread: String,
+}
+
+/// The live connection to a synced orchestrator: the channel the UI uses to ask for a transcript.
+/// Opened once, when the boot says it is signed in; the sync thread holds the account.
+pub struct Sync {
+    pub wants: std::sync::mpsc::Sender<Want>,
 }
 
 impl Thread {
+    /// A thread that holds nothing: what an account with no projects has to draw instead of
+    /// indexing into an empty vector. It has no remote ids, so opening it asks for nothing.
+    pub fn nothing(title: &str) -> Thread {
+        Thread {
+            title: title.to_string(),
+            status: Status::Idle,
+            messages: Vec::new(),
+            elevations: Vec::new(),
+            context: 0.0,
+            branch: None,
+            running: false,
+            total_messages: 0,
+            remote: None,
+        }
+    }
+
     /// What a `read` would report about this window.
     pub fn history(&self) -> History {
         let first_seq = self.messages.first().map_or(0, |m| m.seq);
@@ -177,6 +218,9 @@ pub struct State {
     /// What the local orchestrator is doing — the one part of this state a background thread
     /// writes, through `AppHandle::update`.
     pub backend: crate::orchestrator::Live,
+    /// Present once the orchestrator is signed in and synced; `None` means the fixtures are what is
+    /// on screen.
+    pub sync: Option<Sync>,
 }
 
 impl State {
@@ -197,6 +241,7 @@ impl State {
             streak_days: 8,
             invites: (0, 1),
             backend: crate::orchestrator::Live::Off,
+            sync: None,
         }
     }
 
@@ -244,9 +289,93 @@ impl State {
         thread.running = true;
     }
 
+    /// Replace the fixtures with what the orchestrator actually holds. The sidebar's shape is the
+    /// same either way, which is the point of the model being the model.
+    pub fn apply_snapshot(
+        &mut self,
+        projects: Vec<(
+            crate::remote::RemoteProject,
+            Vec<crate::remote::RemoteThread>,
+        )>,
+        wants: std::sync::mpsc::Sender<Want>,
+    ) {
+        // Only projects with something to open reach the sidebar; an empty account gets one
+        // placeholder, because every renderer indexes `projects[active]` rather than checking.
+        self.projects = projects
+            .iter()
+            .filter(|(_, threads)| !threads.is_empty())
+            .map(|(project, threads)| Project {
+                name: project.name.clone(),
+                threads: threads
+                    .iter()
+                    .map(|thread| crate::remote::thread_from(&project.id, thread))
+                    .collect(),
+            })
+            .collect();
+        if self.projects.is_empty() {
+            self.projects.push(Project {
+                name: "No projects yet".to_string(),
+                threads: vec![Thread::nothing("Nothing open yet")],
+            });
+        }
+        self.active = (0, 0);
+        self.open_tabs = (0..self.projects.len().min(3)).map(|p| (p, 0)).collect();
+        if self.open_tabs.is_empty() {
+            self.open_tabs.push((0, 0));
+        }
+        self.sync = Some(Sync { wants });
+    }
+
+    /// Put a `read` reply on screen. The ids say which thread, because the answer arrives after the
+    /// person may have moved on.
+    pub fn apply_transcript(
+        &mut self,
+        project: &str,
+        thread: &str,
+        transcript: crate::remote::Transcript,
+    ) {
+        let Some(p) = self.projects.iter().position(|project_| {
+            project_.threads.iter().any(|t| {
+                t.remote
+                    .as_ref()
+                    .is_some_and(|r| r.thread == thread && r.project == project)
+            })
+        }) else {
+            return;
+        };
+        let Some(t) = self.projects[p].threads.iter().position(|t| {
+            t.remote
+                .as_ref()
+                .is_some_and(|r| r.thread == thread && r.project == project)
+        }) else {
+            return;
+        };
+        let target = &mut self.projects[p].threads[t];
+        target.title = transcript.title;
+        target.messages = transcript.messages;
+        target.elevations = transcript.elevations;
+        target.total_messages = transcript.history.total;
+        target.running = transcript.history.has_newer;
+        if transcript.history.has_newer {
+            target.status = Status::Working;
+        } else if !target.elevations.is_empty() {
+            target.status = Status::NeedsYou;
+        } else if target.status == Status::Working {
+            target.status = Status::Done;
+        }
+    }
+
     pub fn open_thread(&mut self, p: usize, t: usize) {
         self.active = (p, t);
         self.settings_open = false;
+        // A synced thread has a transcript behind it; ask the sync thread for it, once per open.
+        if let (Some(sync), Some(remote)) = (&self.sync, self.projects[p].threads[t].remote.clone())
+        {
+            let _ = sync.wants.send(Want {
+                project: remote.project,
+                thread: remote.thread,
+            });
+        }
         if !self.open_tabs.contains(&(p, t)) {
             self.open_tabs.push((p, t));
             // The title bar holds a row of tabs, not the whole project tree.

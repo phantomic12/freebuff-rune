@@ -153,6 +153,8 @@ hold conversation content, which is why the shapes in §8 are written with the v
 | live status in the UI | `Live` → sidebar footer (`ui/sidebar.rs`) |
 | transcript as parts | `Part`, `Message`, `Thread::read` (`app/src/model.rs`) ← §9 |
 | cursor paging window | `Thread::history` → `ui/transcript.rs` (`load-earlier` row) |
+| hosted-workspace client | `Endpoint::{bootstrap, authorize, projects, threads, read}` (`app/src/remote.rs`) ← §10 |
+| live sync into the sidebar | `spawn_sync` (`app/src/main.rs`) → `State::apply_snapshot`, `apply_transcript` |
 
 Verified: real boot to `/healthz`, signed-out detection via `/api/auth/status`, orchestrator
 exits ≤2 s after the shell is killed, profile-lock failure surfaced with its stderr line.
@@ -342,3 +344,42 @@ loopback across 190 recorded exchanges, and that is the correct result rather th
 loopback never carries a turn. What loopback does carry is what the shell contributes to one:
 `runtime` (where it will run), `prepare-chat` / `release-chat` (claims the folder for a thread),
 `files`, `git`, `browser` and `terminal` (the tools the agent asks the shell for).
+
+## 10. Reading the person's own threads
+
+§9 said a native shell can only be a client of what the orchestrator answers. This is that client,
+written and tested: `app/src/remote.rs` makes the four calls a reading window needs, and the model
+is what they land in.
+
+| Call | Body | Lands in |
+|---|---|---|
+| `POST /api/hosted-workspace/bootstrap` | `{launchId}` | the account id (§9: the reply also carries the hosted `url`) |
+| `local-conversations` | `{operation:"authorize", accountId}` | — (the window's one-time handshake) |
+| `local-conversations` | `{operation:"projects", accountId, offset}` | sidebar projects |
+| `local-conversations` | `{operation:"threads", accountId, projectId, offset}` | sidebar threads |
+| `local-conversations` | `{operation:"read", accountId, projectId, threadId, after}` | the transcript window |
+
+Every one of them is a POST of one object and carries `x-freebuff-launch-id`; a non-2xx answer is
+the orchestrator's own sentence (`{"error": "Reconnect this local folder to use its tools"}` is a
+*state*, not a crash) and surfaces as the text of an `Err`.
+
+`spawn_sync` in `app/src/main.rs` runs on a background thread once the boot says it is *signed in*:
+bootstrap → authorize → projects → threads, then one update that replaces the fixtures with the
+real sidebar and hands the window a channel. Opening a thread sends `Want { project, thread }` on
+that channel; the same thread answers with `read` and updates the model, so the window never waits
+on a socket and the person can keep clicking while it loads. A signed-out boot says so once on
+stderr and leaves the fixtures alone — nothing pretends to be data it isn't.
+
+Three rules the model keeps, because a real account will violate the obvious assumptions:
+
+- **A project with no threads is not a sidebar entry**, and an account with no projects is one
+  placeholder (`No projects yet` / `Nothing open yet`). Every renderer here indexes
+  `projects[active]`, so an empty vector would be a panic, not an empty state.
+- **A transcript may arrive after the person moved on**, so the update names its project *and*
+  thread ids and is dropped if that thread is no longer in the model.
+- **Only the visible window is fetched** (`after: 0`, the first page). `history.hasOlder` is what
+  the `load-earlier` row draws; paging backwards is the same call with `before`.
+
+What this cannot do is *write*: sending a turn is the hosted page's `POST` to the cloud, not a
+loopback operation (§9), so the composer still stops at the model. That is the product-shaped gap
+issue #1685 is about, and it is now the only one left in the shell.

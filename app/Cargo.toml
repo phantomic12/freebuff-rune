@@ -12,3 +12,5 @@ base64 = "0.22"
 getrandom = "0.3"
 hmac = "0.12"
 sha2 = "0.10"
+# The hosted-workspace calls are JSON in and JSON out; serde_json is already in the tree for Rune.
+serde_json = "1"

@@ -45,8 +45,14 @@ pub enum Live {
     Off,
     /// The child is up and booting; the string is its last reported phase.
     Booting(String),
-    /// `/healthz` answered.
-    Ready { port: u16, pid: u32, authed: bool },
+    /// `/healthz` answered. `launch` is the id every `/api/*` call must carry, kept so the sync
+    /// thread can talk to the orchestrator after boot.
+    Ready {
+        port: u16,
+        pid: u32,
+        authed: bool,
+        launch: String,
+    },
     /// The child never booted, or exited.
     Failed(String),
 }
@@ -89,7 +95,12 @@ impl Live {
         match self {
             Live::Off => "Freebuff orchestrator is not running".to_string(),
             Live::Booting(phase) => format!("Freebuff orchestrator starting, phase {phase}"),
-            Live::Ready { port, pid, authed } => format!(
+            Live::Ready {
+                port,
+                pid,
+                authed,
+                launch: _,
+            } => format!(
                 "Freebuff orchestrator ready on port {port} as process {pid}, {}",
                 if *authed { "signed in" } else { "signed out" }
             ),
@@ -316,6 +327,7 @@ fn run<F: Fn(Live)>(cfg: Config, emit: F) {
                             port: ready_port,
                             pid: ready_pid,
                             authed,
+                            launch: launch_id.clone(),
                         }),
                         Err(why) => {
                             let _ = child.kill();
@@ -463,16 +475,36 @@ fn request(
     path: &str,
     launch_id: Option<&str>,
 ) -> std::io::Result<(u16, String)> {
+    request_body(port, method, path, launch_id, None)
+}
+
+/// The same, with a JSON body — every `/api/hosted-workspace/*` call is a POST of one object.
+pub(crate) fn request_body(
+    port: u16,
+    method: &str,
+    path: &str,
+    launch_id: Option<&str>,
+    body: Option<&str>,
+) -> std::io::Result<(u16, String)> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(30)))?;
     let mut req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nAccept: application/json, text/plain\r\n"
     );
     if let Some(id) = launch_id {
         req.push_str(&format!("{LAUNCH_TOKEN_HEADER}: {id}\r\n"));
     }
+    if let Some(body) = body {
+        req.push_str(&format!(
+            "Content-Type: application/json\r\nContent-Length: {}\r\n",
+            body.len()
+        ));
+    }
     req.push_str("\r\n");
+    if let Some(body) = body {
+        req.push_str(body);
+    }
     stream.write_all(req.as_bytes())?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;

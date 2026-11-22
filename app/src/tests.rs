@@ -5,6 +5,7 @@
 use crate::model::State;
 use crate::ui;
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
+use std::io::{Read, Write};
 
 fn runtime(state: State) -> Runtime<State> {
     let env = Env {
@@ -203,6 +204,7 @@ fn the_footer_says_what_the_orchestrator_is_doing() {
                 port: 7781,
                 pid: 9,
                 authed: false,
+                launch: String::new(),
             },
             "Orchestrator · signed out",
             Tone::Warn,
@@ -212,6 +214,7 @@ fn the_footer_says_what_the_orchestrator_is_doing() {
                 port: 7781,
                 pid: 9,
                 authed: true,
+                launch: String::new(),
             },
             "Orchestrator ready",
             Tone::Good,
@@ -230,7 +233,8 @@ fn the_footer_says_what_the_orchestrator_is_doing() {
         Live::Ready {
             port: 7781,
             pid: 9,
-            authed: true
+            authed: true,
+            launch: String::new()
         }
         .detail(),
         "Freebuff orchestrator ready on port 7781 as process 9, signed in"
@@ -279,7 +283,9 @@ fn the_shell_boots_the_real_orchestrator() {
     let deadline = Instant::now() + Duration::from_secs(120);
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(Live::Ready { port, pid, authed }) => {
+            Ok(Live::Ready {
+                port, pid, authed, ..
+            }) => {
                 ready = Some((port, pid, authed));
                 break;
             }
@@ -291,6 +297,22 @@ fn the_shell_boots_the_real_orchestrator() {
     let (port, pid, authed) = ready.expect("the orchestrator answered /healthz");
     assert!(port > 1024, "it bound the port the shell picked");
     assert!(!authed, "a throwaway profile is signed out");
+
+    // The RPC client against the real server: whatever a signed-out profile answers, it must be
+    // the orchestrator's own JSON sentence, not a framing or parsing failure.
+    let endpoint = crate::remote::Endpoint {
+        port,
+        launch: "0000000000000000".into(),
+    };
+    let answered = endpoint.bootstrap();
+    eprintln!("freebuff-rune: bootstrap answered {answered:?}");
+    if let Err(why) = &answered {
+        assert!(
+            !why.contains("unreadable reply") && !why.contains("malformed HTTP"),
+            "the request reached the orchestrator and its reply parsed: {why}"
+        );
+    }
+    let _ = endpoint.snapshot();
     if pid > 0 {
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/PID", &pid.to_string()])
@@ -389,7 +411,7 @@ fn every_button_has_a_name() {
     let elements = rt.elements();
     let unnamed: Vec<String> = elements
         .iter()
-        .filter(|e| e.role == "button" && e.label.as_deref().map_or(true, str::is_empty))
+        .filter(|e| e.role == "button" && e.label.as_deref().is_none_or(str::is_empty))
         .map(|e| format!("{} ({})", e.key.as_deref().unwrap_or("?"), e.path))
         .collect();
     assert!(unnamed.is_empty(), "unlabelled buttons: {unnamed:?}");
@@ -522,4 +544,234 @@ fn every_part_kind_reaches_the_screen() {
         rt.find("elevation").is_some(),
         "the request holding the thread open"
     );
+}
+
+/// A fake orchestrator on a loopback port: it answers `local-conversations` and `bootstrap` with
+/// the recorded shape and remembers every call, so the RPC client is exercised end to end with no
+/// Bun, no profile and no network.
+struct FakeOrchestrator {
+    port: u16,
+    calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
+}
+
+impl FakeOrchestrator {
+    fn start(threads_body: &'static str, read_body: &'static str) -> Self {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a loopback port");
+        let port = listener.local_addr().unwrap().port();
+        let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String, String)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = calls.clone();
+        std::thread::spawn(move || {
+            for _ in 0..6 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let mut all = Vec::new();
+                while all.windows(4).all(|w| w != b"\r\n\r\n") {
+                    let mut buf = [0u8; 4096];
+                    let Ok(n) = stream.read(&mut buf) else { break };
+                    if n == 0 {
+                        break;
+                    }
+                    all.extend_from_slice(&buf[..n]);
+                }
+                let Some(head_end) = all.windows(4).position(|w| w == b"\r\n\r\n") else {
+                    continue;
+                };
+                let head = String::from_utf8_lossy(&all[..head_end]).into_owned();
+                let mut lines = head.lines();
+                let first = lines.next().unwrap_or_default();
+                let path = first
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_string();
+                let launch = lines
+                    .find(|l| l.to_ascii_lowercase().starts_with("x-freebuff-launch-id:"))
+                    .and_then(|l| l.split_once(':').map(|(_, v)| v.trim().to_string()))
+                    .unwrap_or_default();
+                let body = String::from_utf8_lossy(&all[head_end + 4..]).into_owned();
+                recorded
+                    .lock()
+                    .unwrap()
+                    .push((path.clone(), launch, body.clone()));
+                let reply = if path.ends_with("/bootstrap") {
+                    r#"{"accountId":"acct-7","url":"https://app.freebuff.web/workspace"}"#
+                } else if body.contains(r#""operation":"authorize""#) {
+                    r#"{"ok":true}"#
+                } else if body.contains(r#""operation":"projects""#) {
+                    r#"{"projects":[{"id":"proj-alpha","name":"alpha"},{"id":"proj-beta","name":"beta"}]}"#
+                } else if body.contains(r#""operation":"threads""#) && body.contains("proj-beta") {
+                    // Each project has its own threads; the harness comes from the record.
+                    r#"{"threads":[{"id":"thr-9","title":"Explain the wire","harness":"claude-code"}]}"#
+                } else if body.contains(r#""operation":"threads""#) {
+                    threads_body
+                } else {
+                    read_body
+                };
+                let _ = stream.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                        reply.len()
+                    )
+                    .as_bytes(),
+                );
+            }
+        });
+        FakeOrchestrator { port, calls }
+    }
+
+    fn seen(&self) -> Vec<(String, String, String)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[test]
+fn the_sync_reads_the_orchestrators_own_data() {
+    let fake = FakeOrchestrator::start(
+        r#"{"threads":[{"id":"thr-1","title":"Fix the build","running":true,"harness":"codebuff"},{"id":"thr-2","title":"Explain the wire","running":false,"harness":"claude-code"}]}"#,
+        r#"{
+            "thread":{"id":"thr-1","title":"Fix the build"},
+            "history":{"firstSeq":1,"lastSeq":3,"totalMessages":3,"hasOlder":false,"hasNewer":false},
+            "messages":[
+                {"seq":1,"role":"user","parts":[{"kind":"text","text":"why is the loop slow?"}]},
+                {"seq":2,"role":"assistant","parts":[
+                    {"kind":"reasoning","text":"the iterator re-reads the file every pass"},
+                    {"kind":"tool","toolName":"read_file","input":{"path":"src/loop.ts"}},
+                    {"kind":"text","text":"cached, it is 40x faster"}
+                ]},
+                {"seq":3,"role":"assistant","parts":[
+                    {"kind":"ad","ad":{"title":"Loop Profiler","adText":"Find the hot path in minutes.","cta":"Try free"}},
+                    {"kind":"unknown","text":"dropped, not drawn"}
+                ]}
+            ],
+            "elevations":[{"title":"Overwrite src/loop.ts?","body":"The plan touches one file."}]
+        }"#,
+    );
+    let endpoint = crate::remote::Endpoint {
+        port: fake.port,
+        launch: "launch-9".into(),
+    };
+
+    let snapshot = endpoint.snapshot().expect("projects and threads list");
+    assert_eq!(snapshot.account, "acct-7");
+    assert_eq!(snapshot.projects.len(), 2, "every project");
+    assert_eq!(snapshot.projects[0].1[0].title, "Fix the build");
+    assert!(snapshot.projects[0].1[0].running);
+    assert_eq!(snapshot.projects[1].1[0].harness, "claude-code");
+
+    let transcript = endpoint
+        .read("acct-7", "proj-alpha", "thr-1", 0)
+        .expect("a transcript");
+    assert_eq!(transcript.title, "Fix the build");
+    assert_eq!(transcript.messages.len(), 3);
+    assert_eq!(
+        transcript.messages[1].parts,
+        vec![
+            crate::model::Part::Reasoning("the iterator re-reads the file every pass".into()),
+            crate::model::Part::Tool {
+                name: "read_file".into(),
+                input: "src/loop.ts".into(),
+            },
+            crate::model::Part::Text("cached, it is 40x faster".into()),
+        ]
+    );
+    assert!(matches!(
+        &transcript.messages[2].parts[0],
+        crate::model::Part::Ad { title, body, cta }
+            if title == "Loop Profiler" && body == "Find the hot path in minutes." && cta == "Try free"
+    ));
+    assert_eq!(transcript.elevations.len(), 1);
+    assert_eq!(transcript.history.total, 3);
+    assert!(!transcript.history.has_older);
+
+    // Every call rode the launch header the boot gave it, on the hosted-workspace tree.
+    for (path, launch, body) in &fake.seen() {
+        assert_eq!(launch, "launch-9", "the launch id rides every call");
+        assert!(
+            path.starts_with("/api/hosted-workspace/"),
+            "{path} is on the hosted-workspace tree"
+        );
+        if path.ends_with("/local-conversations") {
+            assert!(
+                body.contains(r#""accountId":"acct-7""#),
+                "{path} names the account"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_snapshot_lands_in_the_model_and_a_thread_opened_asks_for_its_transcript() {
+    let fake = FakeOrchestrator::start(
+        r#"{"threads":[{"id":"thr-1","title":"one"}]}"#,
+        r#"{"thread":{"title":"one"},"history":{"lastSeq":1,"totalMessages":1},"messages":[{"seq":1,"role":"assistant","parts":[{"kind":"text","text":"hello from the orchestrator"}]}],"elevations":[]}"#,
+    );
+    let endpoint = crate::remote::Endpoint {
+        port: fake.port,
+        launch: "launch-9".into(),
+    };
+    let snapshot = endpoint.snapshot().unwrap();
+
+    let mut state = State::seed();
+    let (wants, asked) = std::sync::mpsc::channel::<crate::model::Want>();
+    state.apply_snapshot(snapshot.projects.clone(), wants);
+
+    // The sidebar is now the orchestrator's: one project, one real thread, no fixtures.
+    assert_eq!(
+        state.projects.len(),
+        2,
+        "each project the orchestrator named"
+    );
+    assert_eq!(state.projects[0].name, "alpha");
+    let remote = state.projects[0].threads[0].remote.clone().unwrap();
+    assert_eq!(remote.thread, "thr-1");
+    assert!(state.sync.is_some(), "a working account is connected");
+
+    // Opening that thread asks the sync thread for its transcript.
+    state.open_thread(0, 0);
+    let want = asked
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the open asks for a read");
+    assert_eq!(
+        (want.project.as_str(), want.thread.as_str()),
+        ("proj-alpha", "thr-1")
+    );
+
+    // And the reply lands where the renderer looks.
+    let transcript = endpoint
+        .read(&snapshot.account, &want.project, &want.thread, 0)
+        .unwrap();
+    state.apply_transcript(&want.project, &want.thread, transcript);
+    assert_eq!(state.projects[0].threads[0].messages.len(), 1);
+    assert_eq!(state.projects[0].threads[0].total_messages, 1);
+    assert_eq!(state.projects[0].threads[0].title, "one");
+
+    let rt = runtime(state);
+    assert!(rt.find("msg-1").is_some(), "the fetched message is drawn");
+}
+
+#[test]
+fn an_account_with_nothing_in_it_still_renders() {
+    let mut state = State::seed();
+    let (wants, asked) = std::sync::mpsc::channel::<crate::model::Want>();
+    state.apply_snapshot(Vec::new(), wants);
+    assert_eq!(
+        state.projects.len(),
+        1,
+        "one placeholder, not an empty vector"
+    );
+    assert_eq!(state.projects[0].name, "No projects yet");
+    assert!(state.sync.is_some(), "the account is still connected");
+
+    state.open_thread(0, 0);
+    assert!(
+        asked.try_recv().is_err(),
+        "a placeholder has no remote thread to read"
+    );
+
+    let rt = runtime(state);
+    assert!(rt.find("sidebar").is_some() && rt.find("composer").is_some());
+    // An empty thread draws the landing state, which is the one place a name is safe to read.
+    assert!(rt.find("rail").is_some(), "the window still lays out");
 }

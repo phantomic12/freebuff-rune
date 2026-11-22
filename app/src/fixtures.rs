@@ -30,6 +30,7 @@ fn t(
         branch: branch.map(Into::into),
         running: status == Status::Working || status == Status::NeedsYou,
         total_messages,
+        remote: None,
     }
 }
 

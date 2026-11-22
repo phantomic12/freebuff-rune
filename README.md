@@ -231,6 +231,10 @@ closer to ten).
   placeholder, growing height, and a send button that enables only with text.
 - Settings sheet: light/dark switch that re-tokenises the whole shell live, plus the shell rows.
 - Boot, supervise and shut down a real Freebuff orchestrator, and show what it reached.
+- Read the signed-in account's own projects and threads out of that orchestrator
+  (`bootstrap` → `authorize` → `projects` → `threads`), and fetch a thread's transcript when it is
+  opened (`local-conversations {operation:"read"}`), on a background thread so the window never
+  waits on a socket. A signed-out boot says so and keeps the fixtures.
 - Scroll areas with stick-to-bottom on the transcript.
 - The Electron menu's keyboard shortcuts (Ctrl/⌘ + `,` `T` `Shift+T` `W` `Shift+W`), routed
   app-wide so they work while the composer has focus.
@@ -241,7 +245,10 @@ Tests cover: pane geometry, tab press → thread switch, sidebar open → new ta
 typing/backspace/Enter through the edit model, transcript paging by cursor and every part kind
 reaching the screen, the menu chords reaching the app with the composer focused, window-size
 round-trip and rejection, every button carrying a name, the boot-line parsers on their ugly cases,
-plain and chunked HTTP replies, the footer's five states, and (gated) a real orchestrator boot.
+plain and chunked HTTP replies, the footer's five states, the hosted-workspace client against a
+fake loopback orchestrator (project/thread/transcript parsing, the launch header on every call, a
+snapshot landing in the sidebar and an opened thread asking for its transcript, an empty account
+still rendering), and (gated) a real orchestrator boot plus a real RPC call to it.
 
 ## Repository layout
 
@@ -260,21 +267,21 @@ same license Freebuff Desktop ships under — with Rune's MIT notice carried in 
 
 ## What is mocked, and the next step
 
-The shell now owns the orchestrator process and speaks its boot protocol, but none of its data
-yet:
+The shell owns the orchestrator process, speaks its boot protocol, and now reads the account's
+own projects, threads and transcripts out of it. What it still does not have:
 
-- Threads, messages and tool rows still come from `fixtures.rs`; `State::send` appends a canned
-  reply. `/api/auth/status` is the only payload this port reads.
-- The fixtures are **invented sample content**, not anyone's projects: the app's screenshot showed
-  real names, and a published port cannot carry them. The sponsored card's copy is placeholder
-  text in the app's own voice, not a real ad; the CTA is inert.
-- The thread, chat and event routes are reachable but **unmapped**. The interface that drives them
-  is the hot bundle this install does not have, so the request shapes are not recoverable from the
-  shipped files; `/api/threads` (create) and `/api/thread/:id/message` are all the bundle's own
-  analytics names for. Guessing them from a screenshot would be invention, so nothing does.
-- No auth flow, no updates, no hosted browser/terminal panels.
-- The Overview panel is the app's pre-run state (Environment + Context).
+- **Sending a turn.** The composer edits and submits into the model, and the model appends a
+  reasoned reply, but the turn itself is between the hosted page and `freebuff.com` (see
+  `docs/port-notes.md` §9). Loopback has no write path for it, so a port that sends has to speak
+  the cloud API — the product-shaped gap, not a rendering one.
+- The hosted browser and terminal panels, the updates flow, and the sign-in screen: this shell
+  assumes whatever profile the orchestrator already holds.
+- The `elevations`, `questions` and `queued` queues are parsed when the payload carries them but
+  nothing answers them yet.
+- The fixtures are **invented sample content**, not anyone's projects, and they are what a
+  signed-out boot shows. The sponsored card's copy is placeholder text in the app's own voice, not
+  a real ad; the CTA is inert.
 
-The next step is to map that API from one real exchange: run the installed app, drive one thread
-while a loopback proxy records the request/response pairs, and turn the recorded pair into a
-client here. Everything under it — spawn, health, lifetime, launch token — is already in place.
+The next step is the write half: recording one turn from the hosted page (the recorder in
+`tools/` already taps loopback, which is not where the turn lives) and adding the cloud `POST` that
+carries it.
