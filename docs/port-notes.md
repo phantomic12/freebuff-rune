@@ -517,13 +517,26 @@ are also readable at `…/runs/{runId}/questions`, answered by `POST` to the sam
 `{id, answer: {skipped, answers}}`. A stop is `POST …/runs/{runId}/cancel` with
 `{source}` ∈ `stop` | `send_now` | `system`.
 
-### Why this is reachable from a native shell, and why it is not implemented
+### What authenticates it, measured rather than assumed
 
-The cookie is the thing that decided the question in §10. Electron sets it from
-`bootstrap.sessionToken` for the bootstrap origin, and the vault's entry is named
-`auth/<sha256(origin)>` — the orchestrator's key (`https://www.codebuff.com` on the machine this was
-read from) opens to exactly that token. So the credential a turn needs is already in this shell's
-hands, and what stands between the native composer and the cloud is a TLS client, not a permission.
+The obvious guess is that the vault's entry (§11) is the credential. It is not. The vault is keyed
+`auth/<sha256(origin)>`, and on this machine the only origin that opens is `https://www.codebuff.com`
+— a 159-character token — while the hosted page is served from `freebuff.com`, which sets the cookie
+Electron writes from `bootstrap.sessionToken`. Probed with that vault token, the cloud API answers
+**401** exactly as it does with no cookie at all:
+
+```
+freebuff.com /api/workspace/models             no cookie -> 401
+freebuff.com /api/workspace/models             vault token -> 401
+freebuff.com /api/workspace/cloud/history      no cookie -> 404   (route is not that method)
+www.codebuff.com /api/workspace/cloud/sends    any cookie -> 404  (not the API host)
+```
+
+So the write credential is a *third* secret: `bootstrap.sessionToken`, handed to the shell in the
+same reply that already carries `accountId` and the hosted `url`. The shell receives it and drops it
+today, because reading lives on loopback and needs no cookie at all. Keeping it is one field on
+`Live::Ready`; nothing about it is hidden, guessed, or reverse-engineered — it arrives in plain JSON
+at boot.
 
 It is deliberately not wired up yet:
 
@@ -532,7 +545,6 @@ It is deliberately not wired up yet:
 - **It needs HTTPS in the shell.** The port has no TLS stack today, and adding one is a dependency and
   a trust decision worth making deliberately rather than as a side effect of a composer.
 
-What can be checked without writing anything is that the credential works: a gated test opens the
-vault's own entry and reads one page of `…/api/workspace/cloud/history` with it (`FREEBUFF_LIVE_TEST=1
-cargo test the_session_the_vault_serves`). That is the write half's gate, tested; the POST is the
-remaining work.
+So the order of work for the write half is: retain the bootstrap session token, add a TLS client,
+emit the body above, then follow the run's own stream. The last step is the only one that needs a
+person's word.

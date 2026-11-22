@@ -279,9 +279,12 @@ The shell owns the orchestrator process, speaks its boot protocol, and now reads
 own projects, threads and transcripts out of it. What it still does not have:
 
 - **Sending a turn.** The composer edits and submits into the model, and the model appends a
-  reasoned reply, but the turn itself is between the hosted page and `freebuff.com` (see
-  `docs/port-notes.md` §9). Loopback has no write path for it, so a port that sends has to speak
-  the cloud API — the product-shaped gap, not a rendering one.
+  reasoned reply, but the turn itself is between the hosted page and the cloud (see
+  `docs/port-notes.md` §12): a same-origin `POST /api/workspace/cloud/sends` followed by a
+  resumable `runs/{id}/stream`. Its credential is `bootstrap.sessionToken` (a *different* secret from
+  the vault's, which the cloud answers 401 to — §12), so the remaining work is to keep that token,
+  add a TLS client, and decide to spend the account's credits. Until then the shell does not pretend
+  to send.
 - The hosted browser and terminal panels, the updates flow, and the sign-in screen. This shell reads
   the session Electron last wrote (docs §11) but does not create one: on macOS and Linux the vault
   refuses to exist rather than half-work, and `set`/`confirm` are answered "unavailable" instead of
@@ -292,6 +295,6 @@ own projects, threads and transcripts out of it. What it still does not have:
   signed-out boot shows. The sponsored card's copy is placeholder text in the app's own voice, not
   a real ad; the CTA is inert.
 
-The next step is the write half: recording one turn from the hosted page (the recorder in
-`tools/` already taps loopback, which is not where the turn lives) and adding the cloud `POST` that
-carries it.
+The next step is the write half: an HTTPS client in the shell (the page's own routes are written
+down in §12), a composer that emits the same body, and a stream reader that resumes by sequence
+number — then one turn sent deliberately, because it spends the person's credits.
