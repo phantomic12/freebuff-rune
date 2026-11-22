@@ -383,3 +383,35 @@ Three rules the model keeps, because a real account will violate the obvious ass
 What this cannot do is *write*: sending a turn is the hosted page's `POST` to the cloud, not a
 loopback operation (§9), so the composer still stops at the model. That is the product-shaped gap
 issue #1685 is about, and it is now the only one left in the shell.
+
+### Why a second orchestrator cannot inherit the login
+
+Trying it is worth recording, because it is the one place this client is untested against a real
+account. Booting the shell next to the running Freebuff Desktop, on the *same* profile
+(`~/.config/freebuff-desktop/state.json`), reports **signed out** — and the reason is in
+`src/server/repo/auth-store.ts`:
+
+- desktop sessions live in `{statePath}.auth-secrets.json`, keyed `auth/<sha256(host)>`;
+- the orchestrator does not touch the OS keychain itself. It asks the Electron main process over a
+  loopback vault: `POST http://127.0.0.1:{FREEBUFF_MCP_CONSENT_PORT}/secret` with
+  `Authorization: Bearer {FREEBUFF_MCP_CONSENT_TOKEN}` and `{op: "get" | "set" | "delete", key}`
+  (`authVaultFromEnv`). The values are `safeStorage`-encrypted by that process
+  (`mcp-secret-store.cjs`);
+- with no port and token in its environment the vault is `null`, so there is nothing to read and
+  `/api/auth/status` answers `{authed:false}`.
+
+The profile file itself holds no session (`authSessions` is empty in `state.json`), so patching the
+state path makes no difference — the token is in the vault, and the vault belongs to Electron.
+A native shell therefore has two paths to a signed-in window, both product work rather than
+rendering:
+
+1. **Be the vault.** Serve `/secret` and decrypt with Electron's own `safeStorage` format
+   (on Windows: DPAPI over the key in the app's `Local State`). The orchestrator would then accept
+   this shell exactly as it accepts Electron.
+2. **Sign in natively** and write the same file itself, so the orchestrator starts with a session it
+   can use.
+
+Until one of those exists, the honest state of this port is: supervision, boot contract, launch
+gate, transcript reading and rendering are real and tested against a fake orchestrator (§10 above);
+the account behind them is whatever Electron last left, and a shell that did not host the sign-in
+cannot have it.

@@ -274,8 +274,10 @@ own projects, threads and transcripts out of it. What it still does not have:
   reasoned reply, but the turn itself is between the hosted page and `freebuff.com` (see
   `docs/port-notes.md` §9). Loopback has no write path for it, so a port that sends has to speak
   the cloud API — the product-shaped gap, not a rendering one.
-- The hosted browser and terminal panels, the updates flow, and the sign-in screen: this shell
-  assumes whatever profile the orchestrator already holds.
+- The hosted browser and terminal panels, the updates flow, and the sign-in screen. Sign-in is not
+  something a second shell can inherit: the desktop session lives in a vault the orchestrator reads
+  from the Electron main process (`FREEBUFF_MCP_CONSENT_PORT` + token, `safeStorage`-encrypted), so
+  a non-Electron launch is signed out by construction — see `docs/port-notes.md` §10.
 - The `elevations`, `questions` and `queued` queues are parsed when the payload carries them but
   nothing answers them yet.
 - The fixtures are **invented sample content**, not anyone's projects, and they are what a
