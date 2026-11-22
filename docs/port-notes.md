@@ -468,3 +468,71 @@ upstream would have to make.
 
 What this does *not* change is §10's other conclusion: sending a turn is still the hosted page's
 `POST` to the cloud. Reading is now genuinely native, on the real account.
+
+## 12. The write half: what a turn actually is
+
+Reading was loopback (§10); sending is not, and never was. The hosted page composes a turn in the
+browser and posts it to the cloud on the same origin it was loaded from, authenticated by one
+cookie. This section is read off the page's own client bundle — the routes and shapes are facts about
+the product, and the shapes are what a native composer has to emit if it wants the same result.
+
+### The one route that starts a turn
+
+```
+POST {origin}/api/workspace/cloud/sends
+content-type: application/json
+cookie: __Secure-next-auth.session-token=<sessionToken from bootstrap>
+```
+
+with a body the page builds as:
+
+| Field | Meaning |
+|---|---|
+| `workspaceId` | the thread id the composer is attached to |
+| `runId` | a client-minted UUID for this attempt (the id the stream is later opened with) |
+| `instanceId` | `cloud-${workspaceId}`, or the execution instance the tab is bound to |
+| `prompt` | the message text |
+| `model`, `agentMode`, `effort` | the picker's state; `mission` mode is sent as `agentMode: "build"` plus a `mission: {prompt, effort}` object |
+| `projectId`, `deviceExecution`, `baseRef` | present when the turn is bound to a folder or a machine |
+| `documents`, `sources`, `images` | attachments, each only when there is one |
+| `injectAgentsMd`, `ownerId`, `existingChat` | carrying the page's own context; `existingChat` marks a follow-up |
+
+Two details that cost real debugging time and are worth stating: the page sets a single unremarkable
+header, `floor: 1`, on `POST`s to `cloud/runs` and `cloud/sends` only; and the three
+`x-freebuff-client` / `-workspace-renderer` / `-desktop-version` headers are *optional* — the page
+derives them from a preload bridge and omits them when there is none.
+
+### What comes back, and how it is followed
+
+```
+GET {origin}/api/workspace/cloud/runs/{runId}/stream?after={lastSeq}
+accept: text/event-stream
+```
+
+a server-sent stream with a 150 s open budget, resumable by sequence number; the page treats a 500-event
+page as "there may be more" and re-opens. When a stream cannot be held it falls back to plain polls
+of `…/runs/{runId}?after={seq}`, which return the same events as a list. Status is one of `queued`,
+`running`, `completed`, `cancelled`, `failed`; questions for the person arrive *in* this stream and
+are also readable at `…/runs/{runId}/questions`, answered by `POST` to the same path with
+`{id, answer: {skipped, answers}}`. A stop is `POST …/runs/{runId}/cancel` with
+`{source}` ∈ `stop` | `send_now` | `system`.
+
+### Why this is reachable from a native shell, and why it is not implemented
+
+The cookie is the thing that decided the question in §10. Electron sets it from
+`bootstrap.sessionToken` for the bootstrap origin, and the vault's entry is named
+`auth/<sha256(origin)>` — the orchestrator's key (`https://www.codebuff.com` on the machine this was
+read from) opens to exactly that token. So the credential a turn needs is already in this shell's
+hands, and what stands between the native composer and the cloud is a TLS client, not a permission.
+
+It is deliberately not wired up yet:
+
+- **It spends the person's credits.** Reading is free and reversible; a turn is neither, so it is not
+  something a port should do on its own initiative.
+- **It needs HTTPS in the shell.** The port has no TLS stack today, and adding one is a dependency and
+  a trust decision worth making deliberately rather than as a side effect of a composer.
+
+What can be checked without writing anything is that the credential works: a gated test opens the
+vault's own entry and reads one page of `…/api/workspace/cloud/history` with it (`FREEBUFF_LIVE_TEST=1
+cargo test the_session_the_vault_serves`). That is the write half's gate, tested; the POST is the
+remaining work.
