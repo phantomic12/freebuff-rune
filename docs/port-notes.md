@@ -519,24 +519,29 @@ are also readable at `…/runs/{runId}/questions`, answered by `POST` to the sam
 
 ### What authenticates it, measured rather than assumed
 
-The obvious guess is that the vault's entry (§11) is the credential. It is not. The vault is keyed
-`auth/<sha256(origin)>`, and on this machine the only origin that opens is `https://www.codebuff.com`
-— a 159-character token — while the hosted page is served from `freebuff.com`, which sets the cookie
-Electron writes from `bootstrap.sessionToken`. Probed with that vault token, the cloud API answers
-**401** exactly as it does with no cookie at all:
+Three guesses were available and two of them are wrong, so this page records what the cloud actually
+answers. The instrument was the installed app's own orchestrator, started the way the shell starts it
+(lifetime handshake, session vault, a copy of the profile), asked for `bootstrap`, and then used the
+session token it returned against `freebuff.com` with `curl`:
 
-```
-freebuff.com /api/workspace/models             no cookie -> 401
-freebuff.com /api/workspace/models             vault token -> 401
-freebuff.com /api/workspace/cloud/history      no cookie -> 404   (route is not that method)
-www.codebuff.com /api/workspace/cloud/sends    any cookie -> 404  (not the API host)
-```
+| Request | Answer |
+|---|---|
+| `GET /api/workspace/models`, no cookie | `401` |
+| `GET /api/workspace/models`, **vault** token (the `auth/<sha256>` entry, `https://www.codebuff.com`) | `401` |
+| `GET /api/workspace/models`, **bootstrap** token | `200` |
+| `POST /api/workspace/cloud/sends`, bootstrap token, no `Origin` | `403 {"error":"Invalid request origin"}` |
+| `POST /api/workspace/cloud/sends`, bootstrap token, `Origin: https://freebuff.com`, empty body | `400 {"error":"Invalid send request"}` |
+| `GET /api/workspace/cloud/{sends,runs,history}` (any cookie) | `404` — these routes answer POST only |
 
-So the write credential is a *third* secret: `bootstrap.sessionToken`, handed to the shell in the
-same reply that already carries `accountId` and the hosted `url`. The shell receives it and drops it
-today, because reading lives on loopback and needs no cookie at all. Keeping it is one field on
-`Live::Ready`; nothing about it is hidden, guessed, or reverse-engineered — it arrives in plain JSON
-at boot.
+The third line is the answer to the question §11 raised: the vault's ciphertext is a *different*
+session (the auth origin's), and it does not open the cloud API. The credential a turn needs is
+`bootstrap.sessionToken` — a short opaque string (36 characters here) that arrives in the same reply
+as `accountId` and the hosted `url`, in plain JSON, at every boot. `POST` to a `cloud/*` route is
+also refused unless the request carries the hosted `Origin`, which is what a browser sends for free
+and a native client has to state.
+
+What the shell does with it today is nothing: `remote.rs::bootstrap()` returns `accountId` and drops
+the rest, because reading lives on loopback where no cookie is needed. Keeping it is one field.
 
 It is deliberately not wired up yet:
 
@@ -545,6 +550,7 @@ It is deliberately not wired up yet:
 - **It needs HTTPS in the shell.** The port has no TLS stack today, and adding one is a dependency and
   a trust decision worth making deliberately rather than as a side effect of a composer.
 
-So the order of work for the write half is: retain the bootstrap session token, add a TLS client,
-emit the body above, then follow the run's own stream. The last step is the only one that needs a
-person's word.
+So the order of work for the write half is: keep the bootstrap session token, add a TLS client, send
+`Origin` with the body above, and follow the run's own stream. The last step is the only one that
+needs a person's word — and the first two are now the only unknowns left, which is a much smaller
+question than "does a native shell have permission".

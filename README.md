@@ -281,10 +281,10 @@ own projects, threads and transcripts out of it. What it still does not have:
 - **Sending a turn.** The composer edits and submits into the model, and the model appends a
   reasoned reply, but the turn itself is between the hosted page and the cloud (see
   `docs/port-notes.md` §12): a same-origin `POST /api/workspace/cloud/sends` followed by a
-  resumable `runs/{id}/stream`. Its credential is `bootstrap.sessionToken` (a *different* secret from
-  the vault's, which the cloud answers 401 to — §12), so the remaining work is to keep that token,
-  add a TLS client, and decide to spend the account's credits. Until then the shell does not pretend
-  to send.
+  resumable `runs/{id}/stream`. Measured in §12: the credential is `bootstrap.sessionToken` (the
+  vault's own token is refused — 401), and a `POST` there also wants the hosted `Origin` (403 without
+  it, 400 with it and an empty body). So the remaining work is to keep that token, add a TLS client,
+  and decide to spend the account's credits. Until then the shell does not pretend to send.
 - The hosted browser and terminal panels, the updates flow, and the sign-in screen. This shell reads
   the session Electron last wrote (docs §11) but does not create one: on macOS and Linux the vault
   refuses to exist rather than half-work, and `set`/`confirm` are answered "unavailable" instead of
